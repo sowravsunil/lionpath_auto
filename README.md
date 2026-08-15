@@ -461,3 +461,15 @@ git push -u skut264 feature/my-change
 ## License & ownership
 
 Internal Freshworks SE tooling. Not for public distribution without approval.
+
+---
+
+## Gource Visualization (2.1-graph branch)
+
+This branch adds a gource visualization of the repository's git history.
+
+- **Video file:** `lionpath_auto_gource.mp4` (16 MB, H.264, 1024x768, 30fps)
+- **Rendered with:** gource + ffmpeg (headless via xvfb in OpenCode container)
+- **Stats:** 513 commits, 7 contributors, ~20s runtime
+- **Top contributors:** Sathish Kuttan (310), skut264 (134), Antony Sagayaraj (21)
+- **Tool:** GLM-5.2 via OpenCode HTTP API
