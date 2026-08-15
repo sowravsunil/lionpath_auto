@@ -29,6 +29,7 @@
 9. [Deploy](#deploy)
 10. [Documentation index](#documentation-index)
 11. [Contributing & remotes](#contributing--remotes)
+12. [Knowledge graph (Graphify)](#knowledge-graph-graphify)
 
 ---
 
@@ -461,3 +462,137 @@ git push -u skut264 feature/my-change
 ## License & ownership
 
 Internal Freshworks SE tooling. Not for public distribution without approval.
+
+---
+
+## Knowledge graph (Graphify)
+
+The codebase is large enough — 850 code files, 809 docs, 13 images — that
+flattening it into a directory tree stops telling the whole story. To get a
+queryable map of how code, docs, and configs actually connect, this branch
+runs **[Graphify](https://github.com/Graphify-Labs/graphify)**, a codebase
+knowledge-graph tool that parses every file with **tree-sitter** AST
+parsers, lifts symbols, doc sections, and config keys into nodes, and
+draws edges for the real relationships between them (calls, imports,
+references, conceptual links). The result is a graph you can search,
+traverse, and visualize instead of grepping blind.
+
+### Install and run
+
+Graphify ships as a Python CLI installed in an isolated `pipx` env so it
+doesn't touch the project's own toolchain:
+
+```bash
+pipx install graphifyy        # one-time — adds the `graphify` command
+graphify extract .            # parse repo → build graph → emit outputs
+```
+
+`graphify extract .` walks the repo, runs tree-sitter on each file,
+clusters nodes into communities, and writes three artifacts into
+`graphify-out/`. No API keys, no network — extraction is fully local and
+cost **0 tokens** on this corpus.
+
+### Output files
+
+| File | Size | What it's for |
+|------|------|---------------|
+| [`graphify-out/graph.html`](./graphify-out/graph.html) | 562 KB | Interactive force-directed graph — open in a browser, click nodes/communities, follow edges visually |
+| [`graphify-out/GRAPH_REPORT.md`](./graphify-out/GRAPH_REPORT.md) | 9 KB | Human-readable report — community hubs, god nodes, surprising connections, hyperedges, knowledge gaps, suggested questions |
+| [`graphify-out/graph.json`](./graphify-out/graph.json) | 635 KB | Full machine-readable graph data — feeds `graphify query` / `path` / `explain` and any custom tooling |
+
+### What the graph found
+
+The run produced **625 nodes, 1358 edges, and 30 communities**. Extraction
+fidelity is high: **98% EXTRACTED** (pulled straight from the AST), **2%
+INFERRED** (31 model-reasoned edges, avg confidence 0.74), and **0 import
+cycles** — the dependency graph is acyclic, which is a good sign for a
+codebase this size.
+
+**Community hubs (navigation map).** Graphify grouped related nodes into
+communities that line up cleanly with the real subsystems:
+
+| Community | Maps to |
+|-----------|---------|
+| Frontend App Shell & Pre-call UI | `web/app.js`, `web/precall*.js`, sidebar/nav, prep render |
+| Dashboard & Manager Rollup | `web/dashboard.js`, coaching nudges, quality metrics aggregation |
+| VPS Deploy & Security Docs | `deploy/vps/`, Caddy, Docker Compose, `SECURITY.md`, secret docs |
+| Domain Validation & Gemini Schema | `isLikelyInvalidDomain`, slug normalization, `GEMINI_RESPONSE_SCHEMA` |
+| History Storage Backend | `HistoryBackend`, file/KV history, `historyKey()` |
+| Post-call Frontend Client | `web/postcall.js`, score gauge, call analysis UI |
+| Post-call Normalization | attendee coalescing, dedupe, `actionTextsSimilar()` |
+| Post-call Analysis Worker | `worker/src/postcall`, `PostCallAnalysis`, `POSTCALL_SCHEMA` |
+| Zoom Share Link Parsing | `fetchTranscriptFromShareLink`, `ParsedShareUrl`, VTT handling |
+| Quality Coach Render | `web/qc-preview.html`, `RADAR_DIMENSION_LABELS`, scorecard render |
+| History Sync Frontend | `fetchHistoryFromWorker`, legacy migration, remote push |
+
+**God nodes (core abstractions).** The most-connected symbols are the
+load-bearing entry points of the app — these are the functions a new
+engineer should read first:
+
+| Rank | Node | Edges |
+|------|------|-------|
+| 1 | `How Lionpath Code Works` (doc hub) | 18 |
+| 2 | `boot()` | 17 |
+| 3 | `show()` | 16 |
+| 4 | `fetch()` | 16 |
+| 5 | `showApp()` | 15 |
+| 6 | `fetchTranscriptFromShareLink()` | 15 |
+| 7 | `renderPrep()` | 14 |
+| 8 | `renderManagerDashboard()` | 14 |
+| 9 | `listPostCallAnalyses()` | 13 |
+| 10 | `renderPostCall()` | 13 |
+
+**Hyperedges (data pipelines).** Three group relationships were detected
+at full extraction confidence (1.00) — these are the end-to-end pipelines
+the product is built around:
+
+- **Pre-call prep data pipeline** — `web/app.js` → worker prep/synthesize
+  → Gemini schema → word limits → `generate_prep` doc.
+- **Post-call analysis data pipeline** — `web/postcall.js` →
+  `api/analyze_call` → worker zoom-share → postcall → quality-score →
+  Quality Coach docs.
+- **VPS production deployment stack** — `docs/VPS_DEPLOY` →
+  `docker-compose.yml` → Caddy / web / worker services → Lionpath URLs.
+
+**Surprising connections.** A few edges the graph surfaced that aren't
+obvious from reading the code linearly — mostly INFERRED cross-file links
+worth a quick verification:
+
+- `renderPrep()` ↔ `u()` in `worker/zoom-app.js` (indirect call)
+- `initFirebase()` ↔ `e()` in `worker/zoom-app.js` (indirect call)
+- `web nginx Docker service` ↔ `Portal shell (web/index.html)` (conceptual)
+- `Quality Coach radar chart UI` ↔ `Quality Coach six dimensions` (conceptual, `qc-preview.html` ↔ `POST_CALL_OVERVIEW.md`)
+
+**Knowledge gaps.** **128 isolated nodes** (≤1 connection) flag possible
+missing edges or undocumented components — e.g. `ab-test.sh`,
+`setup.sh`, `start.sh`, `WELL_KNOWN_DOMAINS`. Six thin communities
+(<3 nodes) were omitted from the report but are queryable. One
+**AMBIGUOUS** edge (`lion.benjaminsquare.com tunnel` → `Team Share Pack`)
+is flagged for review.
+
+### Querying the graph
+
+Beyond the HTML/MD outputs, the `graphify` CLI lets you interrogate the
+graph directly:
+
+```bash
+graphify query "<node or concept>"   # find a node and its neighbors
+graphify path <nodeA> <nodeB>        # shortest path between two symbols
+graphify explain <node>              # why this node matters — its role, bridges, community
+```
+
+Use `query` to land on a symbol and see what it touches, `path` to trace
+how a prep function reaches a worker endpoint, and `explain` to get a
+plain-English summary of a node's place in the system.
+
+### Why this is useful
+
+The graph turns "where do I even start?" into a lookup. Concretely it
+helps with: **onboarding** — the god nodes and community hubs are the
+reading order; **impact analysis** — `graphify path` shows the blast
+radius of a change before you touch it; **refactor targets** —
+low-cohesion communities (e.g. Frontend App Shell at 0.06) and 128
+isolated nodes point at code that may want splitting or documenting; and
+**knowledge-gap hunting** — INFERRED/AMBIGUOUS edges are exactly the
+cross-file relationships worth verifying or wiring up properly. Re-run
+`graphify extract .` after meaningful changes to keep the map current.
