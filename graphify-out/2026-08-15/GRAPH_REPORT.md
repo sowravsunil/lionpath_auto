@@ -4,7 +4,7 @@
 - cluster-only mode — file stats not available
 
 ## Summary
-- 8562 nodes · 21430 edges · 417 communities (341 shown, 76 thin omitted)
+- 8562 nodes · 21430 edges · 418 communities (342 shown, 76 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 175 edges (avg confidence: 0.55)
 - Token cost: 0 input · 0 output
 
@@ -213,6 +213,7 @@
 - deal.ts
 - dependencies
 - devDependencies
+- test-fish-sizing-scenarios.mjs
 - test-precall-design-tokens.mjs
 - test-no-dev-seed-in-prod-bundle.mjs
 - eval-prep-golden.mjs
@@ -417,28 +418,28 @@
 10. `switchView()` - 45 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `generateThemeSuppressionData()` --calls--> `aggregateThemeMetrics()`  [EXTRACTED]
+  web/scripts/generate-theme-suppression.mjs → worker/src/consistency-lib.ts
+- `generateThemeSuppressionData()` --calls--> `snapshotsFromConsistencyRuns()`  [EXTRACTED]
+  web/scripts/generate-theme-suppression.mjs → worker/scripts/override-lib.ts
 - `accountText()` --calls--> `buildAccountSearchableText()`  [EXTRACTED]
   worker/scripts/backfill-embeddings.mjs → web/domain/rag-embed-text.js
 - `callSummaryText()` --calls--> `buildCallSearchableText()`  [EXTRACTED]
   worker/scripts/backfill-embeddings.mjs → web/domain/rag-embed-text.js
 - `dealText()` --calls--> `buildDealSearchableText()`  [EXTRACTED]
   worker/scripts/backfill-embeddings.mjs → web/domain/rag-embed-text.js
-- `generateThemeSuppressionData()` --calls--> `aggregateThemeMetrics()`  [EXTRACTED]
-  web/scripts/generate-theme-suppression.mjs → worker/src/consistency-lib.ts
-- `AccountArrRollupPayload` --references--> `FirestoreDoc`  [EXTRACTED]
-  worker/src/data/read-models/arr-rollup.ts → worker/src/data/firestore-admin.ts
 
 ## Import Cycles
 - 3-file cycle: `web/domain/account-se-team.js -> web/domain/lifecycle-service.js -> web/domain/deal-service.js -> web/domain/account-se-team.js`
 - 3-file cycle: `web/auth.js -> web/domain/org-service.js -> web/domain/store.js -> web/auth.js`
 - 3-file cycle: `web/auth.js -> web/domain/user-resolve.js -> web/domain/store.js -> web/auth.js`
-- 3-file cycle: `worker/src/prep/rivals-context.ts -> worker/src/prep/types.ts -> worker/src/schema.ts -> worker/src/prep/rivals-context.ts`
 - 3-file cycle: `worker/src/prep/rivals.ts -> worker/src/prep/types.ts -> worker/src/schema.ts -> worker/src/prep/rivals.ts`
+- 3-file cycle: `worker/src/prep/rivals-context.ts -> worker/src/prep/types.ts -> worker/src/schema.ts -> worker/src/prep/rivals-context.ts`
 - 4-file cycle: `web/auth.js -> web/domain/user-resolve.js -> web/domain/org-service.js -> web/domain/store.js -> web/auth.js`
-- 5-file cycle: `worker/src/gemini-schema.ts -> worker/src/schema.ts -> worker/src/prep/rivals-context.ts -> worker/src/providers/index.ts -> worker/src/providers/gemini.ts -> worker/src/gemini-schema.ts`
 - 5-file cycle: `worker/src/gemini-schema.ts -> worker/src/schema.ts -> worker/src/prep/rivals.ts -> worker/src/providers/index.ts -> worker/src/providers/gemini.ts -> worker/src/gemini-schema.ts`
+- 5-file cycle: `worker/src/gemini-schema.ts -> worker/src/schema.ts -> worker/src/prep/rivals-context.ts -> worker/src/providers/index.ts -> worker/src/providers/gemini.ts -> worker/src/gemini-schema.ts`
 
-## Communities (417 total, 76 thin omitted)
+## Communities (418 total, 76 thin omitted)
 
 ### Community 0 - "app.js"
 Cohesion: 0.03
@@ -446,7 +447,7 @@ Nodes (165): accountDetailHash(), applyInitialRouteFromHash(), applyRouteFromHas
 
 ### Community 1 - "postcall.js"
 Cohesion: 0.03
-Nodes (123): momentumClass(), radarDimensionLabel(), coachTextForSubParameter(), insightfulCoachTip(), wirePrintToolbar(), wireToolbarById(), actionTextsSimilar(), animateScoreGauge() (+115 more)
+Nodes (130): momentumClass(), radarDimensionLabel(), coachTextForSubParameter(), insightfulCoachTip(), wirePrintToolbar(), wireToolbarById(), actionTextsSimilar(), animateScoreGauge() (+122 more)
 
 ### Community 2 - "types.js"
 Cohesion: 0.04
@@ -529,16 +530,16 @@ Cohesion: 0.06
 Nodes (42): canonicalCallType(), callSummariesToAnalyses(), fetchAndHydratePostCallAnalyses(), hydratePostCallAnalyses(), loadTeamCallSummariesFromStore(), loadTeamPostCallsFromStore(), mapScorecardLine(), postCallRecordsToAnalyses() (+34 more)
 
 ### Community 22 - "precall-brief-v9.js"
-Cohesion: 0.05
-Nodes (75): buildFishContextFromPrep(), FISH_FACT_LABELS, UNKNOWN, usableValue(), FISH_SIZE_BUCKETS, FISH_SIZING_LABELS, FISH_SIZING_ORDER, fishBucketFromMetric() (+67 more)
+Cohesion: 0.06
+Nodes (66): buildFishContextFromPrep(), FISH_FACT_LABELS, UNKNOWN, usableValue(), FISH_SIZE_BUCKETS, FISH_SIZING_LABELS, FISH_SIZING_ORDER, fishBucketFromMetric() (+58 more)
 
 ### Community 23 - "tasks.js"
 Cohesion: 0.06
 Nodes (66): addDays(), aggregateFollowUps(), companyFromRecord(), dueUrgency(), endOfWeek(), filterSeActionSteps(), isSeOwner(), normalizeSteps() (+58 more)
 
 ### Community 24 - "shared.js"
-Cohesion: 0.08
-Nodes (63): renderAccountDealPreviewHtml(), renderAccountPickerPreviewHtml(), renderDealTile(), renderLoadingDealCard(), renderNewDealEditor(), renderStaticDealCard(), activateNewDealMode(), attachAccountLookup() (+55 more)
+Cohesion: 0.09
+Nodes (59): renderAccountDealPreviewHtml(), renderAccountPickerPreviewHtml(), renderDealTile(), renderLoadingDealCard(), renderNewDealEditor(), renderStaticDealCard(), activateNewDealMode(), attachAccountLookup() (+51 more)
 
 ### Community 25 - "show"
 Cohesion: 0.07
@@ -701,8 +702,8 @@ Cohesion: 0.09
 Nodes (35): formatCompactUsd(), isLowConfidenceArr(), sortPipelineDealRows(), resolveOrgForUser(), aiAttachAttached(), arrConfidenceBadge(), buildPipelineView(), collectPipelineFilterOptions() (+27 more)
 
 ### Community 65 - "identity-merge.js"
-Cohesion: 0.11
-Nodes (35): contactBridgesEntries(), dedupePersonLabels(), emailLocalPart(), firstNameToken(), identitiesShouldMerge(), identityLabel(), identityMatchesName(), isAmbiguousShortIdentityMatch() (+27 more)
+Cohesion: 0.12
+Nodes (32): contactBridgesEntries(), dedupePersonLabels(), emailLocalPart(), firstNameToken(), identitiesShouldMerge(), identityLabel(), identityMatchesName(), isAmbiguousShortIdentityMatch() (+24 more)
 
 ### Community 66 - "usage-anomaly.ts"
 Cohesion: 0.10
@@ -902,7 +903,7 @@ Nodes (20): callTypePill(), formatTcFieldValue(), parseDurationMinutesLabel(), r
 
 ### Community 115 - "consistency-lib.ts"
 Cohesion: 0.16
-Nodes (22): checks, failed, runs, stableLines, analyzeCallRuns(), analyzeCallThemeRuns(), applicabilityFlipRate(), CallRunMetrics (+14 more)
+Nodes (23): checks, failed, runs, stableLines, aggregateThemeMetrics(), analyzeCallRuns(), analyzeCallThemeRuns(), applicabilityFlipRate() (+15 more)
 
 ### Community 116 - "extract-benchmark.mjs"
 Cohesion: 0.11
@@ -934,7 +935,7 @@ Nodes (7): backdrop, MockEl, panel, profile, registry, signOut, trigger
 
 ### Community 123 - "override-report.mjs"
 Cohesion: 0.13
-Nodes (20): buildOverrideReportData(), args, CONSISTENCY_DIR, consistencyRunArg, __dirname, dryRun, exportPath, listConsistencyRunDirs() (+12 more)
+Nodes (20): buildOverrideReportData(), snapshotsFromConsistencyRuns(), args, CONSISTENCY_DIR, consistencyRunArg, __dirname, dryRun, exportPath (+12 more)
 
 ### Community 124 - "rivals-context.ts"
 Cohesion: 0.18
@@ -1185,8 +1186,8 @@ Cohesion: 0.28
 Nodes (9): confidenceBandLabel(), confidenceDotsHtml(), formatQipScoreValue(), meddpiccPipsHtml(), qipMeterPct(), qipScoreDecimals(), renderCountUpValue(), renderPostcallKpiStack() (+1 more)
 
 ### Community 188 - "generate-theme-suppression.mjs"
-Cohesion: 0.22
-Nodes (12): buildManifest(), CONSISTENCY_DIR, __dirname, formatModule(), generateThemeSuppressionData(), invokedDirectly, listConsistencyRunDirs(), main() (+4 more)
+Cohesion: 0.23
+Nodes (11): buildManifest(), CONSISTENCY_DIR, __dirname, formatModule(), generateThemeSuppressionData(), invokedDirectly, listConsistencyRunDirs(), main() (+3 more)
 
 ### Community 189 - "test-deal-traction.mjs"
 Cohesion: 0.15
@@ -1227,6 +1228,10 @@ Nodes (12): dependencies, react, react-dom, remotion, react, react-dom, remotion
 ### Community 198 - "devDependencies"
 Cohesion: 0.20
 Nodes (12): devDependencies, @remotion/cli, @types/react, typescript, @remotion/cli, @types/react, devDependencies, @remotion/cli (+4 more)
+
+### Community 199 - "test-fish-sizing-scenarios.mjs"
+Cohesion: 0.21
+Nodes (9): scenario(), assert(), countMatches(), fishSection(), MINIMAL_PREP, RIVALS_WEB, runScenario(), SCENARIOS (+1 more)
 
 ### Community 200 - "test-precall-design-tokens.mjs"
 Cohesion: 0.20
@@ -1693,24 +1698,24 @@ Cohesion: 0.50
 Nodes (3): m, models, vars
 
 ## Knowledge Gaps
-- **2104 isolated node(s):** `CacheEntry`, `ContactEnrichSources`, `EvidenceSnapshot`, `LineSnapshot`, `ContextRouteTarget` (+2099 more)
+- **2104 isolated node(s):** `CacheEntry`, `ContactEnrichSources`, `RawRival`, `RawRivals`, `RawValue` (+2099 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **76 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `esc()` connect `esc` to `app.js`, `postcall.js`, `types.js`, `precall-render.js`, `dashboard.js`, `renderMinutesTab`, `call-view.js`, `quality-score.js`, `product-signal-service.js`, `precall.js`, `calls-list-view.js`, `se-access-service.js`, `precall-brief-v9.js`, `tasks.js`, `shared.js`, `show`, `rubric-profiles.js`, `score-disputes.js`, `test-call-timeline-render.mjs`, `crayons-ui.js`, `arr-service.js`, `contact-tile.js`, `account-view.js`, `deal-arr-module.js`, `lifecycle-view.js`, `renderPostcallKpiStack`, `se-detail-view.js`, `login-as-ui.js`, `pipeline-view.js`, `prep-disputes.js`, `briefs-list-view.js`, `layoutSpineMarkerLabels`, `call-product-signal.js`, `initGlobalSearch`, `renderCallRecord`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
 - **Why does `getStore()` connect `getStore` to `app.js`, `types.js`, `call-type-labels.js`, `dashboard.js`, `esc`, `account-service.js`, `call-view.js`, `score-override-service.js`, `product-signal-service.js`, `calls-list-view.js`, `se-access-service.js`, `postcall-resolve-context.js`, `contact-service.js`, `deal-motion.js`, `test-profile-settings.mjs`, `score-disputes.js`, `store.js`, `arr-service.js`, `account-view.js`, `search-service.js`, `deal-arr-module.js`, `lifecycle-view.js`, `se-detail-view.js`, `pipeline-view.js`, `acting-owner.js`, `test-account-view.mjs`, `test-call-view.mjs`, `firebase-config.js`, `test-deal-view.mjs`, `postcall-contact-resolve.js`?**
-  _High betweenness centrality (0.047) - this node is a cross-community bridge._
-- **Why does `extractJson()` connect `extractJson` to `cluster-label.ts`, `test-source-table.ts`, `providers/index.ts`, `arr-inputs.ts`, `enrich.ts`, `linkedin-pdf.ts`, `summaries-batch.ts`, `qualify.ts`, `postcall/scorecard.ts`, `commit.ts`, `synthesize.ts`, `vision.ts`, `gaps.ts`, `summarise.ts`, `gemini-batch-orchestrator.ts`, `company-news.ts`, `rivals-context.ts`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
-- **What connects `CacheEntry`, `ContactEnrichSources`, `EvidenceSnapshot` to the rest of the system?**
+  _High betweenness centrality (0.046) - this node is a cross-community bridge._
+- **Why does `esc()` connect `esc` to `app.js`, `postcall.js`, `types.js`, `precall-render.js`, `dashboard.js`, `renderMinutesTab`, `call-view.js`, `quality-score.js`, `product-signal-service.js`, `precall.js`, `calls-list-view.js`, `se-access-service.js`, `precall-brief-v9.js`, `tasks.js`, `shared.js`, `show`, `rubric-profiles.js`, `score-disputes.js`, `test-call-timeline-render.mjs`, `crayons-ui.js`, `arr-service.js`, `contact-tile.js`, `account-view.js`, `deal-arr-module.js`, `lifecycle-view.js`, `renderPostcallKpiStack`, `se-detail-view.js`, `login-as-ui.js`, `pipeline-view.js`, `prep-disputes.js`, `briefs-list-view.js`, `layoutSpineMarkerLabels`, `call-product-signal.js`, `initGlobalSearch`, `renderCallRecord`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+- **Why does `ProviderEnv` connect `pass2.ts` to `cluster-label.ts`, `postcall/index.ts`, `providers/index.ts`, `transcript-infer.ts`, `arr-inputs.ts`, `summaries-batch.ts`, `qualify.ts`, `postcall/scorecard.ts`, `commit.ts`, `run-clustering.ts`, `vision.ts`, `gemini.ts`, `prep/index.ts`, `gaps.ts`, `summarise.ts`, `gemini-batch.ts`, `gemini-batch-orchestrator.ts`, `gemini-cache.ts`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **What connects `CacheEntry`, `ContactEnrichSources`, `RawRival` to the rest of the system?**
   _2104 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `app.js` be split into smaller, more focused modules?**
   _Cohesion score 0.032665680871084825 - nodes in this community are weakly interconnected._
 - **Should `postcall.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.03306686046511628 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03169934640522876 - nodes in this community are weakly interconnected._
 - **Should `types.js` be split into smaller, more focused modules?**
   _Cohesion score 0.039019103102560626 - nodes in this community are weakly interconnected._
