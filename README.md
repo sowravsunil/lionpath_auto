@@ -29,6 +29,7 @@
 9. [Deploy](#deploy)
 10. [Documentation index](#documentation-index)
 11. [Contributing & remotes](#contributing--remotes)
+12. [Gource visualization (`2.1-graph` branch)](#gource-visualization-21-graph-branch)
 
 ---
 
@@ -464,12 +465,40 @@ Internal Freshworks SE tooling. Not for public distribution without approval.
 
 ---
 
-## Gource Visualization (2.1-graph branch)
+## Gource visualization (`2.1-graph` branch)
 
-This branch adds a gource visualization of the repository's git history.
+The **`2.1-graph`** branch adds a [gource](https://gource.io) visualization of the repository's entire git history — a time-lapse of how Lionpath grew from a single initial commit into the multi-layer portal/worker/domain codebase it is today. The rendered video (`lionpath_auto_gource.mp4`) is produced from this branch but lives outside the repo (it's a build artifact, not source), so it's referenced here rather than committed alongside the code.
 
-- **Video file:** `lionpath_auto_gource.mp4` (16 MB, H.264, 1024x768, 30fps)
-- **Rendered with:** gource + ffmpeg (headless via xvfb in OpenCode container)
-- **Stats:** 513 commits, 7 contributors, ~20s runtime
-- **Top contributors:** Sathish Kuttan (310), skut264 (134), Antony Sagayaraj (21)
-- **Tool:** GLM-5.2 via OpenCode HTTP API
+### What the video shows
+
+Gource animates the commit graph as a growing tree of directories and files: each commit becomes a colored avatar sweeping over the file(s) it touches, directories bloom outward as new areas are introduced, and idle periods show the tree resting. Watching it end-to-end makes several things visible at a glance that are hard to get from `git log` alone — which subsystems were built first versus bolted on later, where concentrated bursts of activity landed (the `2.1` CRM/dual-write push, the `2.1.1` account/deal unification, the `2.1.2` dispute/Activities work), and how the `web/` and `worker/` layers grew in parallel rather than one driving the other.
+
+### How it was rendered
+
+| | |
+|---|---|
+| **Tool** | `gource` → raw PPM stream piped to `ffmpeg` for H.264 encode |
+| **Resolution / fps** | 1024 × 768 @ 30 fps (H.264, ~6.1 Mbps) |
+| **Runtime** | ~20.7 s real-time playback |
+| **Size** | ~15.1 MB (15,836,360 bytes) |
+| **Output** | `lionpath_auto_gource.mp4` (outside the repo tree) |
+| **Environment** | Headless via `xvfb` inside the OpenCode container; authored with the GLM-5.2 model over the OpenCode HTTP API |
+
+The gource invocation walks the full commit log of the repo root, so the visualization reflects the merged history of every branch this repo has ever pulled in (upstream `skut264/lionpath`, the production fork `antonyanbu25/lionpath_V2`, and the local `main`), not just the commits authored directly here.
+
+### Repository at a glance (as captured in the video)
+
+| Metric | Value |
+|--------|-------|
+| **Total commits** | 514 |
+| **Contributors** | 7 |
+| **History span** | 2026-07-12 → 2026-08-15 (~5 weeks) |
+| **Top contributor** | Sathish Kuttan — 321 commits (~62%) |
+| **Runner-up** | skut264 — 134 commits (~26%) |
+| **Others** | Antony Sagayaraj (21), sowravsunil (15), Niv Natarajan (15), antonyanbu25 (7), opencode-agent (1) |
+
+The contributor distribution tells its own story: the bulk of the codebase was authored by one primary engineer (Sathish) with a strong second from the upstream maintainer (skut264), and a handful of targeted contributions from the rest of the team — consistent with an internal tool where one SE owns the build and others land focused fixes.
+
+### Why it's useful
+
+Beyond being satisfying to watch, the visualization is a quick onboarding artifact: a new contributor can absorb the project's shape — that `web/domain/` is the client-side CRM core, that `worker/src/postcall/` is the multi-pass analysis pipeline, that `deploy/` and `docs/` grew in late — in 20 seconds rather than by spelunking through `git log` and the repository layout. It also doubles as a rough health check: a flat or idle stretch in the timeline maps to a quiet week, and a dense bloom of avatars over one directory maps to a feature push, which makes it easy to correlate the video against the release-highlights table at the top of this README.
