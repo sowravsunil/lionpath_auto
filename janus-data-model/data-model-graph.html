@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Janus Data Model — High Level</title>
+<style>
+  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#16161f; color:#fdf6ec; }
+  #header { padding:16px 24px; border-bottom:1px solid #333; }
+  #header h1 { margin:0; font-size:20px; }
+  #header p { margin:4px 0 0; color:#aaa; font-size:13px; }
+  #legend { padding:10px 24px; font-size:12px; }
+  #legend span { margin-right:16px; }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
+  #graph { width:100%; height:calc(100vh - 120px); }
+  .node text { font-size:11px; fill:#fdf6ec; pointer-events:none; }
+  .link { stroke:#888; stroke-opacity:0.5; }
+  .link-label { font-size:9px; fill:#aaa; }
+  #tooltip { position:absolute; background:#222; border:1px solid #444; padding:8px 10px; border-radius:6px; font-size:12px; max-width:320px; display:none; pointer-events:none; }
+  #tooltip b { color:#ff5647; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>Janus Data Model — High Level</h1>
+  <p>30 tables · 8 domains · 52 foreign-key relationships. Drag nodes, scroll to zoom, hover for details.</p>
+</div>
+<div id="legend"></div>
+<div id="graph"></div>
+<div id="tooltip"></div>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const nodes = [{"id": "user", "domain": "Identity & Org", "cols": ["id PK", "email UQ", "display_name", "job_title", "job_level", "org_unit_id FK", "status", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "user_identity", "domain": "Identity & Org", "cols": ["id PK", "user_id FK", "auth_provider", "auth_uid", "created_at"]}, {"id": "org_unit", "domain": "Identity & Org", "cols": ["id PK", "name", "parent_id FK", "unit_type", "created_at", "updated_at"]}, {"id": "role", "domain": "Identity & Org", "cols": ["id PK", "name", "description", "role_type", "created_at"]}, {"id": "user_role", "domain": "Identity & Org", "cols": ["user_id FK", "role_id FK", "valid_from", "valid_to", "granted_by FK", "created_at"]}, {"id": "account", "domain": "Customer", "cols": ["id PK", "name", "domain", "slug UQ", "industry", "health_data JSONB", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "contact", "domain": "Customer", "cols": ["id PK", "account_id FK", "email UQ", "name", "title", "role", "created_at", "updated_at"]}, {"id": "deal", "domain": "Customer", "cols": ["id PK", "account_id FK", "owner_user_id FK", "org_unit_id FK", "name", "stage", "status", "close_date", "amount", "technical_commit JSONB", "meddpicc JSONB", "ai_agent", "copilot", "freshcaller", "other_addons", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "deal_contact", "domain": "Customer", "cols": ["deal_id FK", "contact_id FK", "role", "first_seen_at", "last_seen_at"]}, {"id": "activity", "domain": "Activity & Call", "cols": ["id PK", "deal_id FK", "account_id FK", "owner_user_id FK", "org_unit_id FK", "activity_type", "subject", "description", "occurred_at", "duration_minutes", "source_integration FK", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "pre_call", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK 1:1", "deal_id FK", "research_brief JSONB", "input_snapshot JSONB", "generated_at", "created_at"]}, {"id": "post_call", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK 1:1", "deal_id FK", "transcript_ref", "analysis JSONB", "detail JSONB", "created_at", "updated_at"]}, {"id": "call_participant", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK", "contact_id FK", "participant_role", "created_at"]}, {"id": "task", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK", "deal_id FK", "owner_user_id FK", "title", "description", "status", "due_date", "source", "created_at", "updated_at"]}, {"id": "rubric_theme", "domain": "Scoring", "cols": ["id PK", "name", "description", "display_order", "status", "created_at"]}, {"id": "rubric", "domain": "Scoring", "cols": ["id PK", "rubric_theme_id FK", "name", "description", "version", "display_order", "effective_from", "effective_to", "created_at"]}, {"id": "rubric_parameter", "domain": "Scoring", "cols": ["id PK", "rubric_id FK", "name", "description", "weight", "display_order", "created_at"]}, {"id": "scorecard", "domain": "Scoring", "cols": ["id PK", "activity_id FK 1:1", "owner_user_id FK", "rubric_id FK", "composite_score", "se_camera", "customer_camera", "created_at"]}, {"id": "scorecard_line", "domain": "Scoring", "cols": ["id PK", "scorecard_id FK", "rubric_parameter_id FK", "score", "evidence", "created_at"]}, {"id": "score_override", "domain": "Scoring", "cols": ["id PK", "scorecard_line_id FK", "previous_score", "new_score", "reason", "created_by FK", "created_at"]}, {"id": "product_signal", "domain": "Product Intelligence", "cols": ["id PK", "post_call_id FK", "deal_id FK", "account_id FK", "owner_user_id FK", "signal_type", "fw_product", "capability_area", "title", "description", "evidence", "deal_impact", "status", "reviewed_by FK", "cluster_id FK", "created_at", "updated_at"]}, {"id": "signal_cluster", "domain": "Product Intelligence", "cols": ["id PK", "name", "capability_area", "description", "signal_count", "status", "created_at", "updated_at"]}, {"id": "coaching_focus", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "set_by_user_id FK", "rubric_theme_id FK", "description", "target", "status", "timeframe_start", "timeframe_end", "created_at", "updated_at"]}, {"id": "coaching_reflection", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "coaching_focus_id FK", "activity_id FK", "reflection_text", "created_at"]}, {"id": "coaching_recommendation", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "rubric_theme_id FK", "recommendation_text", "evidence_summary", "status", "generated_at", "dismissed_at"]}, {"id": "integration", "domain": "Integration", "cols": ["id PK", "provider", "display_name", "auth_type", "credentials_ref", "config JSONB", "status", "last_healthy_at", "created_at", "updated_at"]}, {"id": "sync_job", "domain": "Integration", "cols": ["id PK", "integration_id FK", "direction", "entity_type", "status", "records_processed", "records_failed", "error_summary", "started_at", "completed_at"]}, {"id": "webhook_event", "domain": "Integration", "cols": ["id PK", "integration_id FK", "event_type", "payload JSONB", "processing_status", "linked_entity_type", "linked_entity_id", "received_at", "processed_at"]}, {"id": "ai_run", "domain": "Platform", "cols": ["id PK", "activity_id FK", "run_type", "model", "prompt_version", "input_tokens", "output_tokens", "cost_usd", "latency_ms", "created_at"]}, {"id": "audit_log", "domain": "Platform", "cols": ["id PK", "user_id FK", "entity_type", "entity_id", "action", "payload JSONB", "created_at"]}];
+const links = [{"source": "user", "target": "org_unit", "label": "org_unit_id"}, {"source": "user_identity", "target": "user", "label": "user_id"}, {"source": "user_role", "target": "user", "label": "user_id"}, {"source": "user_role", "target": "role", "label": "role_id"}, {"source": "user_role", "target": "user", "label": "granted_by"}, {"source": "contact", "target": "account", "label": "account_id"}, {"source": "deal", "target": "account", "label": "account_id"}, {"source": "deal", "target": "user", "label": "owner_user_id"}, {"source": "deal", "target": "org_unit", "label": "org_unit_id"}, {"source": "deal_contact", "target": "deal", "label": "deal_id"}, {"source": "deal_contact", "target": "contact", "label": "contact_id"}, {"source": "activity", "target": "deal", "label": "deal_id"}, {"source": "activity", "target": "account", "label": "account_id"}, {"source": "activity", "target": "user", "label": "owner_user_id"}, {"source": "activity", "target": "org_unit", "label": "org_unit_id"}, {"source": "activity", "target": "integration", "label": "source_integration"}, {"source": "pre_call", "target": "activity", "label": "activity_id"}, {"source": "pre_call", "target": "deal", "label": "deal_id"}, {"source": "post_call", "target": "activity", "label": "activity_id"}, {"source": "post_call", "target": "deal", "label": "deal_id"}, {"source": "call_participant", "target": "activity", "label": "activity_id"}, {"source": "call_participant", "target": "contact", "label": "contact_id"}, {"source": "task", "target": "activity", "label": "activity_id"}, {"source": "task", "target": "deal", "label": "deal_id"}, {"source": "task", "target": "user", "label": "owner_user_id"}, {"source": "rubric", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "rubric_parameter", "target": "rubric", "label": "rubric_id"}, {"source": "scorecard", "target": "activity", "label": "activity_id"}, {"source": "scorecard", "target": "user", "label": "owner_user_id"}, {"source": "scorecard", "target": "rubric", "label": "rubric_id"}, {"source": "scorecard_line", "target": "scorecard", "label": "scorecard_id"}, {"source": "scorecard_line", "target": "rubric_parameter", "label": "rubric_parameter_id"}, {"source": "score_override", "target": "scorecard_line", "label": "scorecard_line_id"}, {"source": "score_override", "target": "user", "label": "created_by"}, {"source": "product_signal", "target": "post_call", "label": "post_call_id"}, {"source": "product_signal", "target": "deal", "label": "deal_id"}, {"source": "product_signal", "target": "account", "label": "account_id"}, {"source": "product_signal", "target": "user", "label": "owner_user_id"}, {"source": "product_signal", "target": "user", "label": "reviewed_by"}, {"source": "product_signal", "target": "signal_cluster", "label": "cluster_id"}, {"source": "coaching_focus", "target": "user", "label": "se_user_id"}, {"source": "coaching_focus", "target": "user", "label": "set_by_user_id"}, {"source": "coaching_focus", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "coaching_reflection", "target": "user", "label": "se_user_id"}, {"source": "coaching_reflection", "target": "coaching_focus", "label": "coaching_focus_id"}, {"source": "coaching_reflection", "target": "activity", "label": "activity_id"}, {"source": "coaching_recommendation", "target": "user", "label": "se_user_id"}, {"source": "coaching_recommendation", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "sync_job", "target": "integration", "label": "integration_id"}, {"source": "webhook_event", "target": "integration", "label": "integration_id"}, {"source": "ai_run", "target": "activity", "label": "activity_id"}, {"source": "audit_log", "target": "user", "label": "user_id"}];
+const colors = {"Identity & Org": "#4e79a7", "Customer": "#f28e2b", "Activity & Call": "#e15759", "Scoring": "#76b7b2", "Product Intelligence": "#59a14f", "Coaching": "#edc948", "Integration": "#b07aa1", "Platform": "#ff9da7"};
+
+const width = window.innerWidth, height = window.innerHeight - 120;
+const svg = d3.select("#graph").append("svg").attr("width", width).attr("height", height);
+const g = svg.append("g");
+
+const legend = d3.select("#legend");
+Object.entries(colors).forEach(([d, c]) => {
+  legend.append("span").html(`<span class="swatch" style="background:${c}"></span>${d}`);
+});
+
+const sim = d3.forceSimulation(nodes)
+  .force("link", d3.forceLink(links).id(d => d.id).distance(90))
+  .force("charge", d3.forceManyBody().strength(-300))
+  .force("center", d3.forceCenter(width/2, height/2))
+  .force("collide", d3.forceCollide().radius(40));
+
+const link = g.append("g").selectAll("line").data(links).join("line")
+  .attr("class", "link").attr("stroke-width", 1.2);
+
+const linkLabel = g.append("g").selectAll("text").data(links).join("text")
+  .attr("class", "link-label").text(d => d.label);
+
+const node = g.append("g").selectAll("g").data(nodes).join("g")
+  .call(d3.drag().on("start", dragstart).on("drag", dragged).on("end", dragend));
+
+node.append("circle").attr("r", 22).attr("fill", d => colors[d.domain]).attr("stroke", "#fff").attr("stroke-width", 1);
+node.append("text").attr("dy", 4).attr("text-anchor", "middle").text(d => d.id);
+
+node.on("mouseover", function(ev, d) {
+  const tip = d3.select("#tooltip");
+  tip.style("display","block")
+     .html(`<b>${d.id}</b> <span style="color:${colors[d.domain]}">(${d.domain})</span><br><small>${d.cols.join(", ")}</small>`);
+}).on("mousemove", function(ev) {
+  d3.select("#tooltip").style("left", (ev.pageX+12)+"px").style("top", (ev.pageY+12)+"px");
+}).on("mouseout", function() { d3.select("#tooltip").style("display","none"); });
+
+sim.on("tick", () => {
+  link.attr("x1", d=>d.source.x).attr("y1", d=>d.source.y).attr("x2", d=>d.target.x).attr("y2", d=>d.target.y);
+  linkLabel.attr("x", d=>(d.source.x+d.target.x)/2).attr("y", d=>(d.source.y+d.target.y)/2);
+  node.attr("transform", d=>`translate(${d.x},${d.y})`);
+});
+
+const zoom = d3.zoom().scaleExtent([0.2, 4]).on("zoom", ev => g.attr("transform", ev.transform));
+svg.call(zoom);
+
+function dragstart(ev, d) { if(!ev.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
+function dragged(ev, d) { d.fx=ev.x; d.fy=ev.y; }
+function dragend(ev, d) { if(!ev.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }
+</script>
+</body>
+</html>
