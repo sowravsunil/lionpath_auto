@@ -1,378 +1,444 @@
-# Janus Data Model — High Level (all 30 tables)
+# Janus Data Model — High-Level ER Diagram
+
+Complete schema: **30 tables · 8 domains · 52 foreign keys**. Rendered as a single
+Mermaid `erDiagram` (GitHub native). For an interactive force-directed graph view
+see [`data-model-graph.html`](./data-model-graph.html).
+
+Legend for column annotations: `PK` primary key · `FK` foreign key · `"unique"`
+a unique-constrained column (shown as a comment, since Mermaid's erDiagram
+grammar only recognises `PK`/`FK` as key markers) · `JSONB` typed JSON column.
+`// FK → target` notes resolve the referenced table when the column name alone is
+ambiguous (e.g. `granted_by → user`, `reviewed_by → user`).
 
 ```mermaid
 erDiagram
+    %% ──────────── Identity & Org ────────────
     user {
-        id PK
-        email UQ
-        display_name
-        job_title
-        job_level
-        org_unit_id FK
-        status
-        external_ref
-        sync_state
-        created_at
-        updated_at
+        bigint id PK
+        text email "unique"
+        text display_name
+        text job_title
+        text job_level
+        bigint org_unit_id FK
+        text status
+        text external_ref
+        text sync_state
+        timestamptz created_at
+        timestamptz updated_at
     }
     user_identity {
-        id PK
-        user_id FK
-        auth_provider
-        auth_uid
-        created_at
+        bigint id PK
+        bigint user_id FK
+        text auth_provider
+        text auth_uid
+        timestamptz created_at
     }
     org_unit {
-        id PK
-        name
-        parent_id FK
-        unit_type
-        created_at
-        updated_at
+        bigint id PK
+        text name
+        bigint parent_id FK
+        text unit_type
+        timestamptz created_at
+        timestamptz updated_at
     }
     role {
-        id PK
-        name
-        description
-        role_type
-        created_at
+        bigint id PK
+        text name
+        text description
+        text role_type
+        timestamptz created_at
     }
     user_role {
-        user_id FK
-        role_id FK
-        valid_from
-        valid_to
-        granted_by FK
-        created_at
-    }
-    account {
-        id PK
-        name
-        domain
-        slug UQ
-        industry
-        health_data JSONB
-        external_ref
-        sync_state
-        created_at
-        updated_at
-    }
-    contact {
-        id PK
-        account_id FK
-        email UQ
-        name
-        title
-        role
-        created_at
-        updated_at
-    }
-    deal {
-        id PK
-        account_id FK
-        owner_user_id FK
-        org_unit_id FK
-        name
-        stage
-        status
-        close_date
-        amount
-        technical_commit JSONB
-        meddpicc JSONB
-        ai_agent
-        copilot
-        freshcaller
-        other_addons
-        external_ref
-        sync_state
-        created_at
-        updated_at
-    }
-    deal_contact {
-        deal_id FK
-        contact_id FK
-        role
-        first_seen_at
-        last_seen_at
-    }
-    activity {
-        id PK
-        deal_id FK
-        account_id FK
-        owner_user_id FK
-        org_unit_id FK
-        activity_type
-        subject
-        description
-        occurred_at
-        duration_minutes
-        source_integration FK
-        external_ref
-        sync_state
-        created_at
-        updated_at
-    }
-    pre_call {
-        id PK
-        activity_id FK 1:1
-        deal_id FK
-        research_brief JSONB
-        input_snapshot JSONB
-        generated_at
-        created_at
-    }
-    post_call {
-        id PK
-        activity_id FK 1:1
-        deal_id FK
-        transcript_ref
-        analysis JSONB
-        detail JSONB
-        created_at
-        updated_at
-    }
-    call_participant {
-        id PK
-        activity_id FK
-        contact_id FK
-        participant_role
-        created_at
-    }
-    task {
-        id PK
-        activity_id FK
-        deal_id FK
-        owner_user_id FK
-        title
-        description
-        status
-        due_date
-        source
-        created_at
-        updated_at
-    }
-    rubric_theme {
-        id PK
-        name
-        description
-        display_order
-        status
-        created_at
-    }
-    rubric {
-        id PK
-        rubric_theme_id FK
-        name
-        description
-        version
-        display_order
-        effective_from
-        effective_to
-        created_at
-    }
-    rubric_parameter {
-        id PK
-        rubric_id FK
-        name
-        description
-        weight
-        display_order
-        created_at
-    }
-    scorecard {
-        id PK
-        activity_id FK 1:1
-        owner_user_id FK
-        rubric_id FK
-        composite_score
-        se_camera
-        customer_camera
-        created_at
-    }
-    scorecard_line {
-        id PK
-        scorecard_id FK
-        rubric_parameter_id FK
-        score
-        evidence
-        created_at
-    }
-    score_override {
-        id PK
-        scorecard_line_id FK
-        previous_score
-        new_score
-        reason
-        created_by FK
-        created_at
-    }
-    product_signal {
-        id PK
-        post_call_id FK
-        deal_id FK
-        account_id FK
-        owner_user_id FK
-        signal_type
-        fw_product
-        capability_area
-        title
-        description
-        evidence
-        deal_impact
-        status
-        reviewed_by FK
-        cluster_id FK
-        created_at
-        updated_at
-    }
-    signal_cluster {
-        id PK
-        name
-        capability_area
-        description
-        signal_count
-        status
-        created_at
-        updated_at
-    }
-    coaching_focus {
-        id PK
-        se_user_id FK
-        set_by_user_id FK
-        rubric_theme_id FK
-        description
-        target
-        status
-        timeframe_start
-        timeframe_end
-        created_at
-        updated_at
-    }
-    coaching_reflection {
-        id PK
-        se_user_id FK
-        coaching_focus_id FK
-        activity_id FK
-        reflection_text
-        created_at
-    }
-    coaching_recommendation {
-        id PK
-        se_user_id FK
-        rubric_theme_id FK
-        recommendation_text
-        evidence_summary
-        status
-        generated_at
-        dismissed_at
-    }
-    integration {
-        id PK
-        provider
-        display_name
-        auth_type
-        credentials_ref
-        config JSONB
-        status
-        last_healthy_at
-        created_at
-        updated_at
-    }
-    sync_job {
-        id PK
-        integration_id FK
-        direction
-        entity_type
-        status
-        records_processed
-        records_failed
-        error_summary
-        started_at
-        completed_at
-    }
-    webhook_event {
-        id PK
-        integration_id FK
-        event_type
-        payload JSONB
-        processing_status
-        linked_entity_type
-        linked_entity_id
-        received_at
-        processed_at
-    }
-    ai_run {
-        id PK
-        activity_id FK
-        run_type
-        model
-        prompt_version
-        input_tokens
-        output_tokens
-        cost_usd
-        latency_ms
-        created_at
-    }
-    audit_log {
-        id PK
-        user_id FK
-        entity_type
-        entity_id
-        action
-        payload JSONB
-        created_at
+        bigint user_id FK
+        bigint role_id FK
+        date valid_from
+        date valid_to
+        bigint granted_by FK
+        timestamptz created_at
     }
 
-    user ||--o{ org_unit : "org_unit_id"
-    user_identity ||--o{ user : "user_id"
-    user_role ||--o{ user : "user_id"
-    user_role ||--o{ role : "role_id"
-    user_role ||--o{ user : "granted_by"
-    contact ||--o{ account : "account_id"
-    deal ||--o{ account : "account_id"
-    deal ||--o{ user : "owner_user_id"
-    deal ||--o{ org_unit : "org_unit_id"
-    deal_contact ||--o{ deal : "deal_id"
-    deal_contact ||--o{ contact : "contact_id"
-    activity ||--o{ deal : "deal_id"
-    activity ||--o{ account : "account_id"
-    activity ||--o{ user : "owner_user_id"
-    activity ||--o{ org_unit : "org_unit_id"
-    activity ||--o{ integration : "source_integration"
-    pre_call ||--o{ activity : "activity_id"
-    pre_call ||--o{ deal : "deal_id"
-    post_call ||--o{ activity : "activity_id"
-    post_call ||--o{ deal : "deal_id"
-    call_participant ||--o{ activity : "activity_id"
-    call_participant ||--o{ contact : "contact_id"
-    task ||--o{ activity : "activity_id"
-    task ||--o{ deal : "deal_id"
-    task ||--o{ user : "owner_user_id"
-    rubric ||--o{ rubric_theme : "rubric_theme_id"
-    rubric_parameter ||--o{ rubric : "rubric_id"
-    scorecard ||--o{ activity : "activity_id"
-    scorecard ||--o{ user : "owner_user_id"
-    scorecard ||--o{ rubric : "rubric_id"
-    scorecard_line ||--o{ scorecard : "scorecard_id"
-    scorecard_line ||--o{ rubric_parameter : "rubric_parameter_id"
-    score_override ||--o{ scorecard_line : "scorecard_line_id"
-    score_override ||--o{ user : "created_by"
-    product_signal ||--o{ post_call : "post_call_id"
-    product_signal ||--o{ deal : "deal_id"
-    product_signal ||--o{ account : "account_id"
-    product_signal ||--o{ user : "owner_user_id"
-    product_signal ||--o{ user : "reviewed_by"
-    product_signal ||--o{ signal_cluster : "cluster_id"
-    coaching_focus ||--o{ user : "se_user_id"
-    coaching_focus ||--o{ user : "set_by_user_id"
-    coaching_focus ||--o{ rubric_theme : "rubric_theme_id"
-    coaching_reflection ||--o{ user : "se_user_id"
-    coaching_reflection ||--o{ coaching_focus : "coaching_focus_id"
-    coaching_reflection ||--o{ activity : "activity_id"
-    coaching_recommendation ||--o{ user : "se_user_id"
-    coaching_recommendation ||--o{ rubric_theme : "rubric_theme_id"
-    sync_job ||--o{ integration : "integration_id"
-    webhook_event ||--o{ integration : "integration_id"
-    ai_run ||--o{ activity : "activity_id"
-    audit_log ||--o{ user : "user_id"
+    %% ──────────── Customer ────────────
+    account {
+        bigint id PK
+        text name
+        text domain
+        text slug "unique"
+        text industry
+        jsonb health_data
+        text external_ref
+        text sync_state
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    contact {
+        bigint id PK
+        bigint account_id FK
+        text email "unique"
+        text name
+        text title
+        text role
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    deal {
+        bigint id PK
+        bigint account_id FK
+        bigint owner_user_id FK
+        bigint org_unit_id FK
+        text name
+        text stage
+        text status
+        date close_date
+        numeric amount
+        jsonb technical_commit
+        jsonb meddpicc
+        boolean ai_agent
+        boolean copilot
+        boolean freshcaller
+        boolean other_addons
+        text external_ref
+        text sync_state
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    deal_contact {
+        bigint deal_id FK
+        bigint contact_id FK
+        text role
+        timestamptz first_seen_at
+        timestamptz last_seen_at
+    }
+
+    %% ──────────── Activity & Call ────────────
+    activity {
+        bigint id PK
+        bigint deal_id FK
+        bigint account_id FK
+        bigint owner_user_id FK
+        bigint org_unit_id FK
+        text activity_type
+        text subject
+        text description
+        timestamptz occurred_at
+        int duration_minutes
+        bigint source_integration FK
+        text external_ref
+        text sync_state
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    pre_call {
+        bigint id PK
+        bigint activity_id FK "1:1"
+        bigint deal_id FK
+        jsonb research_brief
+        jsonb input_snapshot
+        timestamptz generated_at
+        timestamptz created_at
+    }
+    post_call {
+        bigint id PK
+        bigint activity_id FK "1:1"
+        bigint deal_id FK
+        text transcript_ref
+        jsonb analysis
+        jsonb detail
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    call_participant {
+        bigint id PK
+        bigint activity_id FK
+        bigint contact_id FK
+        text participant_role
+        timestamptz created_at
+    }
+    task {
+        bigint id PK
+        bigint activity_id FK
+        bigint deal_id FK
+        bigint owner_user_id FK
+        text title
+        text description
+        text status
+        date due_date
+        text source
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% ──────────── Scoring ────────────
+    rubric_theme {
+        bigint id PK
+        text name
+        text description
+        int display_order
+        text status
+        timestamptz created_at
+    }
+    rubric {
+        bigint id PK
+        bigint rubric_theme_id FK
+        text name
+        text description
+        int version
+        int display_order
+        date effective_from
+        date effective_to
+        timestamptz created_at
+    }
+    rubric_parameter {
+        bigint id PK
+        bigint rubric_id FK
+        text name
+        text description
+        numeric weight
+        int display_order
+        timestamptz created_at
+    }
+    scorecard {
+        bigint id PK
+        bigint activity_id FK "1:1"
+        bigint owner_user_id FK
+        bigint rubric_id FK
+        numeric composite_score
+        boolean se_camera
+        boolean customer_camera
+        timestamptz created_at
+    }
+    scorecard_line {
+        bigint id PK
+        bigint scorecard_id FK
+        bigint rubric_parameter_id FK
+        numeric score
+        text evidence
+        timestamptz created_at
+    }
+    score_override {
+        bigint id PK
+        bigint scorecard_line_id FK
+        numeric previous_score
+        numeric new_score
+        text reason
+        bigint created_by FK
+        timestamptz created_at
+    }
+
+    %% ──────────── Product Intelligence ────────────
+    product_signal {
+        bigint id PK
+        bigint post_call_id FK
+        bigint deal_id FK
+        bigint account_id FK
+        bigint owner_user_id FK
+        text signal_type
+        text fw_product
+        text capability_area
+        text title
+        text description
+        text evidence
+        text deal_impact
+        text status
+        bigint reviewed_by FK
+        bigint cluster_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    signal_cluster {
+        bigint id PK
+        text name
+        text capability_area
+        text description
+        int signal_count
+        text status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    %% ──────────── Coaching ────────────
+    coaching_focus {
+        bigint id PK
+        bigint se_user_id FK
+        bigint set_by_user_id FK
+        bigint rubric_theme_id FK
+        text description
+        text target
+        text status
+        date timeframe_start
+        date timeframe_end
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    coaching_reflection {
+        bigint id PK
+        bigint se_user_id FK
+        bigint coaching_focus_id FK
+        bigint activity_id FK
+        text reflection_text
+        timestamptz created_at
+    }
+    coaching_recommendation {
+        bigint id PK
+        bigint se_user_id FK
+        bigint rubric_theme_id FK
+        text recommendation_text
+        text evidence_summary
+        text status
+        timestamptz generated_at
+        timestamptz dismissed_at
+    }
+
+    %% ──────────── Integration ────────────
+    integration {
+        bigint id PK
+        text provider
+        text display_name
+        text auth_type
+        text credentials_ref
+        jsonb config
+        text status
+        timestamptz last_healthy_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    sync_job {
+        bigint id PK
+        bigint integration_id FK
+        text direction
+        text entity_type
+        text status
+        int records_processed
+        int records_failed
+        text error_summary
+        timestamptz started_at
+        timestamptz completed_at
+    }
+    webhook_event {
+        bigint id PK
+        bigint integration_id FK
+        text event_type
+        jsonb payload
+        text processing_status
+        text linked_entity_type
+        bigint linked_entity_id
+        timestamptz received_at
+        timestamptz processed_at
+    }
+
+    %% ──────────── Platform ────────────
+    ai_run {
+        bigint id PK
+        bigint activity_id FK
+        text run_type
+        text model
+        text prompt_version
+        int input_tokens
+        int output_tokens
+        numeric cost_usd
+        int latency_ms
+        timestamptz created_at
+    }
+    audit_log {
+        bigint id PK
+        bigint user_id FK
+        text entity_type
+        bigint entity_id
+        text action
+        jsonb payload
+        timestamptz created_at
+    }
+
+    %% ──────────── Relationships (FK edges) ────────────
+    %% Identity & Org
+    user ||--o{ user_identity : "has identity"
+    user }o--|| org_unit : "belongs to"
+    org_unit }o--|| org_unit : "parent of"
+    user }o--o{ user_role : "user_id"
+    user }o--o{ user_role : "granted_by"
+    role }o--o{ user_role : "assigned"
+
+    %% Customer
+    account ||--o{ contact : "has"
+    account ||--o{ deal : "owns"
+    user ||--o{ deal : "owner_user_id"
+    org_unit ||--o{ deal : "scoped to"
+    deal }o--o{ contact : "deal_contact"
+    deal ||--o{ deal_contact : "deal_id"
+    contact ||--o{ deal_contact : "contact_id"
+
+    %% Activity & Call
+    activity }o--|| deal : "deal_id"
+    activity }o--|| account : "account_id"
+    activity }o--|| user : "owner_user_id"
+    activity }o--|| org_unit : "org_unit_id"
+    activity }o--|| integration : "source_integration"
+    activity ||--|| pre_call : "activity_id 1:1"
+    activity ||--|| post_call : "activity_id 1:1"
+    activity ||--o{ call_participant : "activity_id"
+    activity ||--o{ task : "activity_id"
+    pre_call }o--|| deal : "deal_id"
+    post_call }o--|| deal : "deal_id"
+    contact ||--o{ call_participant : "contact_id"
+    task }o--|| deal : "deal_id"
+    task }o--|| user : "owner_user_id"
+
+    %% Scoring
+    rubric_theme ||--o{ rubric : "contains"
+    rubric ||--o{ rubric_parameter : "has"
+    activity ||--|| scorecard : "activity_id 1:1"
+    user ||--o{ scorecard : "owner_user_id"
+    rubric ||--o{ scorecard : "scored by"
+    scorecard ||--o{ scorecard_line : "scorecard_id"
+    rubric_parameter ||--o{ scorecard_line : "rubric_parameter_id"
+    scorecard_line ||--o{ score_override : "scorecard_line_id"
+    user ||--o{ score_override : "created_by"
+
+    %% Product Intelligence
+    post_call ||--o{ product_signal : "post_call_id"
+    deal ||--o{ product_signal : "deal_id"
+    account ||--o{ product_signal : "account_id"
+    user ||--o{ product_signal : "owner_user_id"
+    user ||--o{ product_signal : "reviewed_by"
+    signal_cluster ||--o{ product_signal : "cluster_id"
+
+    %% Coaching
+    user ||--o{ coaching_focus : "se_user_id"
+    user ||--o{ coaching_focus : "set_by_user_id"
+    rubric_theme ||--o{ coaching_focus : "rubric_theme_id"
+    user ||--o{ coaching_reflection : "se_user_id"
+    coaching_focus ||--o{ coaching_reflection : "coaching_focus_id"
+    activity ||--o{ coaching_reflection : "activity_id"
+    user ||--o{ coaching_recommendation : "se_user_id"
+    rubric_theme ||--o{ coaching_recommendation : "rubric_theme_id"
+
+    %% Integration
+    integration ||--o{ sync_job : "integration_id"
+    integration ||--o{ webhook_event : "integration_id"
+
+    %% Platform
+    activity ||--o{ ai_run : "activity_id"
+    user ||--o{ audit_log : "user_id"
 ```
+
+## Domain index
+
+| Domain | Tables |
+|---|---|
+| Identity & Org | `user`, `user_identity`, `org_unit`, `role`, `user_role` |
+| Customer | `account`, `contact`, `deal`, `deal_contact` |
+| Activity & Call | `activity`, `pre_call`, `post_call`, `call_participant`, `task` |
+| Scoring | `rubric_theme`, `rubric`, `rubric_parameter`, `scorecard`, `scorecard_line`, `score_override` |
+| Product Intelligence | `product_signal`, `signal_cluster` |
+| Coaching | `coaching_focus`, `coaching_reflection`, `coaching_recommendation` |
+| Integration | `integration`, `sync_job`, `webhook_event` |
+| Platform | `ai_run`, `audit_log` |
+
+See the per-domain focused diagrams for columns and both internal + cross-domain
+relationships: [`domain-identity-org.md`](./domain-identity-org.md),
+[`domain-customer.md`](./domain-customer.md),
+[`domain-activity-call.md`](./domain-activity-call.md),
+[`domain-scoring.md`](./domain-scoring.md),
+[`domain-product-intelligence.md`](./domain-product-intelligence.md),
+[`domain-coaching.md`](./domain-coaching.md),
+[`domain-integration.md`](./domain-integration.md),
+[`domain-platform.md`](./domain-platform.md).

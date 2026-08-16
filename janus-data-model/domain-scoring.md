@@ -1,72 +1,106 @@
-# Janus Data Model — Scoring
+# Domain: Scoring
+
+Focused ER diagram for the **Scoring** domain (6 tables). Two parallel trees share
+the `rubric_theme` root: the rubric definition chain (`rubric_theme → rubric →
+rubric_parameter`) and the scoring chain (`scorecard → scorecard_line →
+score_override`). `scorecard` is 1:1 with `activity`.
+
+**Tables:** `rubric_theme`, `rubric`, `rubric_parameter`, `scorecard`,
+`scorecard_line`, `score_override`
+
+## Internal relationships
+- `rubric` → `rubric_theme` (rubric_theme_id)
+- `rubric_parameter` → `rubric` (rubric_id)
+- `scorecard_line` → `scorecard` (scorecard_id)
+- `scorecard_line` → `rubric_parameter` (rubric_parameter_id)
+- `score_override` → `scorecard_line` (scorecard_line_id)
+
+## Cross-domain relationships
+- `scorecard.activity_id` → `activity` (**1:1**)
+- `scorecard.owner_user_id` → `user` (Identity & Org)
+- `scorecard.rubric_id` → `rubric` (internal)
+- `score_override.created_by` → `user` (Identity & Org)
+- `rubric_theme` is referenced by: `coaching_focus.rubric_theme_id`,
+  `coaching_recommendation.rubric_theme_id` (both Coaching domain)
 
 ```mermaid
 erDiagram
     rubric_theme {
-        id PK
-        name
-        description
-        display_order
-        status
-        created_at
+        bigint id PK
+        text name
+        text description
+        int display_order
+        text status
+        timestamptz created_at
     }
     rubric {
-        id PK
-        rubric_theme_id FK
-        name
-        description
-        version
-        display_order
-        effective_from
-        effective_to
-        created_at
+        bigint id PK
+        bigint rubric_theme_id FK
+        text name
+        text description
+        int version
+        int display_order
+        date effective_from
+        date effective_to
+        timestamptz created_at
     }
     rubric_parameter {
-        id PK
-        rubric_id FK
-        name
-        description
-        weight
-        display_order
-        created_at
+        bigint id PK
+        bigint rubric_id FK
+        text name
+        text description
+        numeric weight
+        int display_order
+        timestamptz created_at
     }
     scorecard {
-        id PK
-        activity_id FK 1:1
-        owner_user_id FK
-        rubric_id FK
-        composite_score
-        se_camera
-        customer_camera
-        created_at
+        bigint id PK
+        bigint activity_id FK "1:1"
+        bigint owner_user_id FK
+        bigint rubric_id FK
+        numeric composite_score
+        boolean se_camera
+        boolean customer_camera
+        timestamptz created_at
     }
     scorecard_line {
-        id PK
-        scorecard_id FK
-        rubric_parameter_id FK
-        score
-        evidence
-        created_at
+        bigint id PK
+        bigint scorecard_id FK
+        bigint rubric_parameter_id FK
+        numeric score
+        text evidence
+        timestamptz created_at
     }
     score_override {
-        id PK
-        scorecard_line_id FK
-        previous_score
-        new_score
-        reason
-        created_by FK
-        created_at
+        bigint id PK
+        bigint scorecard_line_id FK
+        numeric previous_score
+        numeric new_score
+        text reason
+        bigint created_by FK
+        timestamptz created_at
     }
 
-    rubric ||--o{ rubric_theme : "rubric_theme_id"
-    rubric_parameter ||--o{ rubric : "rubric_id"
-    scorecard ||--o{ activity : "activity_id"
-    scorecard ||--o{ user : "owner_user_id"
-    scorecard ||--o{ rubric : "rubric_id"
-    scorecard_line ||--o{ scorecard : "scorecard_id"
-    scorecard_line ||--o{ rubric_parameter : "rubric_parameter_id"
-    score_override ||--o{ scorecard_line : "scorecard_line_id"
-    score_override ||--o{ user : "created_by"
-    coaching_focus ||--o{ rubric_theme : "rubric_theme_id"
-    coaching_recommendation ||--o{ rubric_theme : "rubric_theme_id"
+    rubric_theme ||--o{ rubric : "rubric_theme_id"
+    rubric ||--o{ rubric_parameter : "rubric_id"
+    scorecard ||--o{ scorecard_line : "scorecard_id"
+    rubric_parameter ||--o{ scorecard_line : "rubric_parameter_id"
+    scorecard_line ||--o{ score_override : "scorecard_line_id"
+    %% cross-domain
+    activity ||--|| scorecard : "activity_id (1:1)"
+    user ||--o{ scorecard : "owner_user_id"
+    user ||--o{ score_override : "created_by"
+    rubric ||--o{ scorecard : "rubric_id"
 ```
+
+## Notes
+- A `scorecard` is created exactly once per `activity` (1:1, enforced by a unique
+  constraint on `activity_id`). It is the persisted evaluation of one call against
+  one `rubric`.
+- Each `scorecard_line` is one row per `rubric_parameter` — the join of those two
+  tables gives you the parameter name + weight alongside the score.
+- `score_override` is an append-only audit trail: never updates `scorecard_line`
+  in place; a new row records `previous_score → new_score` plus `reason` and the
+  `created_by` user. This preserves the full history of human corrections.
+- `rubric.effective_from / effective_to` allow versioned rubrics to coexist; a
+  scorecard pins a specific `rubric_id` so historical scores stay comparable.

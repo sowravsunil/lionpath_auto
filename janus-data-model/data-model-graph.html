@@ -1,85 +1,886 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Janus Data Model — High Level</title>
+<meta charset="UTF-8">
+<title>Janus — Data Model Graph</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://d3js.org/d3.v7.min.js"></script>
 <style>
-  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:#16161f; color:#fdf6ec; }
-  #header { padding:16px 24px; border-bottom:1px solid #333; }
-  #header h1 { margin:0; font-size:20px; }
-  #header p { margin:4px 0 0; color:#aaa; font-size:13px; }
-  #legend { padding:10px 24px; font-size:12px; }
-  #legend span { margin-right:16px; }
-  .swatch { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; }
-  #graph { width:100%; height:calc(100vh - 120px); }
-  .node text { font-size:11px; fill:#fdf6ec; pointer-events:none; }
-  .link { stroke:#888; stroke-opacity:0.5; }
-  .link-label { font-size:9px; fill:#aaa; }
-  #tooltip { position:absolute; background:#222; border:1px solid #444; padding:8px 10px; border-radius:6px; font-size:12px; max-width:320px; display:none; pointer-events:none; }
-  #tooltip b { color:#ff5647; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --bg-3: #1c2230;
+    --border: #2a3142;
+    --border-2: #3a4358;
+    --text: #e6edf3;
+    --text-dim: #9aa7b8;
+    --text-mute: #5c6675;
+    --accent: #58a6ff;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    display: flex;
+    overflow: hidden;
+  }
+  #graph {
+    flex: 1;
+    position: relative;
+    background: radial-gradient(ellipse at 40% 30%, #131a26 0%, #0d1117 70%);
+  }
+  svg.graph {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  svg.graph:active { cursor: grabbing; }
+
+  /* Legend / sidebar */
+  #sidebar {
+    width: 300px;
+    background: var(--bg-2);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sb-section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .sb-title {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 10px;
+  }
+  #brand { padding: 18px 16px; border-bottom: 1px solid var(--border); }
+  #brand h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+  #brand p { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+
+  #search {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border-2);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search-results { max-height: 160px; overflow-y: auto; margin-top: 6px; display: none; }
+  #search-results.active { display: block; }
+  .search-item {
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .search-item:hover { background: var(--bg-3); }
+  .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  #info-panel { min-height: 150px; }
+  #info-content { font-size: 12px; color: var(--text-dim); line-height: 1.55; }
+  #info-content .tname { color: var(--text); font-weight: 600; font-size: 14px; display: block; margin-bottom: 2px; }
+  #info-content .tdomain { font-size: 11px; color: var(--text-mute); margin-bottom: 8px; display: block; }
+  #info-content .cols-label { color: var(--text-mute); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; margin: 8px 0 4px; }
+  #info-content .col { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: var(--text); padding: 1px 0; }
+  #info-content .col .pk { color: #ffd166; font-weight: 600; }
+  #info-content .col .fk { color: #56d364; }
+  #info-content .col .uq { color: #ff7b72; }
+  #info-content .empty { color: var(--text-mute); font-style: italic; font-size: 12px; }
+
+  .legend-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 6px; border-radius: 4px; cursor: pointer; font-size: 12px;
+  }
+  .legend-item:hover { background: var(--bg-3); }
+  .legend-item.dimmed { opacity: 0.4; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .legend-count { color: var(--text-mute); font-size: 11px; }
+
+  #legend-wrap { flex: 1; overflow-y: auto; }
+  #legend-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  #legend-controls label { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; color: var(--text-dim); user-select: none; }
+  #legend-controls label:hover { color: var(--text); }
+  input[type="checkbox"].cb {
+    appearance: none; -webkit-appearance: none;
+    width: 14px; height: 14px; border: 1.5px solid var(--border-2);
+    border-radius: 3px; background: var(--bg); cursor: pointer; position: relative; flex-shrink: 0;
+  }
+  input[type="checkbox"].cb:checked { background: var(--accent); border-color: var(--accent); }
+  input[type="checkbox"].cb:checked::after {
+    content: ''; position: absolute; left: 3.5px; top: 1px; width: 4px; height: 7px;
+    border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+
+  #stats { padding: 10px 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-mute); }
+
+  /* controls overlay */
+  #controls {
+    position: absolute; top: 14px; left: 14px;
+    background: rgba(22, 27, 34, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex; gap: 4px;
+    backdrop-filter: blur(6px);
+  }
+  #controls button {
+    background: transparent; color: var(--text-dim); border: 1px solid transparent;
+    border-radius: 5px; padding: 5px 9px; font-size: 12px; cursor: pointer; line-height: 1;
+  }
+  #controls button:hover { background: var(--bg-3); color: var(--text); }
+  #controls button.active { background: var(--bg-3); color: var(--accent); }
+
+  /* SVG node / edge styles */
+  .node { cursor: pointer; }
+  .node circle { stroke: rgba(255,255,255,0.25); stroke-width: 1.4px; transition: stroke 0.12s, stroke-width 0.12s; }
+  .node text {
+    font-size: 11px; font-weight: 500; fill: var(--text);
+    pointer-events: none; user-select: none;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+  }
+  .node.dimmed { opacity: 0.12; }
+  .node.focused circle { stroke: #fff; stroke-width: 3px; }
+  .node.selected circle { stroke: var(--accent); stroke-width: 3px; }
+
+  .link { fill: none; stroke: #2f3a52; stroke-width: 1.2px; transition: stroke 0.12s, stroke-width 0.12s; }
+  .link.dimmed { opacity: 0.06; }
+  .link.highlighted { stroke: #58a6ff; stroke-width: 2.4px; }
+  .link-label {
+    font-size: 9px; fill: #6b7a90; pointer-events: none; user-select: none;
+    opacity: 0; transition: opacity 0.12s;
+  }
+  .link-label.visible { opacity: 0.95; }
+
+  /* tooltip */
+  #tooltip {
+    position: absolute; pointer-events: none; opacity: 0;
+    background: rgba(13, 17, 23, 0.97);
+    border: 1px solid var(--border-2);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px; color: var(--text);
+    max-width: 280px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    transition: opacity 0.1s;
+    z-index: 50;
+  }
+  #tooltip .tt-name { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+  #tooltip .tt-domain { font-size: 10px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  #tooltip .tt-cols { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10.5px; line-height: 1.5; }
+  #tooltip .tt-cols .pk { color: #ffd166; }
+  #tooltip .tt-cols .fk { color: #56d364; }
+  #tooltip .tt-cols .uq { color: #ff7b72; }
+  #tooltip .tt-fk { color: #56d364; font-size: 11px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 5px; }
+
+  .edge-marker { fill: #2f3a52; }
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>Janus Data Model — High Level</h1>
-  <p>30 tables · 8 domains · 52 foreign-key relationships. Drag nodes, scroll to zoom, hover for details.</p>
+<div id="graph">
+  <div id="controls">
+    <button id="btn-zoom-in" title="Zoom in">＋</button>
+    <button id="btn-zoom-out" title="Zoom out">－</button>
+    <button id="btn-fit" title="Fit to view">⤢</button>
+    <button id="btn-labels" class="active" title="Toggle edge labels">FK</button>
+    <button id="btn-relayout" title="Re-run layout">⟳</button>
+  </div>
+  <svg class="graph"></svg>
+  <div id="tooltip"></div>
 </div>
-<div id="legend"></div>
-<div id="graph"></div>
-<div id="tooltip"></div>
-<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<div id="sidebar">
+  <div id="brand">
+    <h1>Janus · Data Model</h1>
+    <p>Postgres schema — 30 tables, 8 domains</p>
+  </div>
+  <div class="sb-section">
+    <div class="sb-title">Search tables</div>
+    <input id="search" type="text" placeholder="Filter tables…" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+  <div class="sb-section" id="info-panel">
+    <div class="sb-title">Table detail</div>
+    <div id="info-content"><span class="empty">Click a table to inspect its columns &amp; relationships.</span></div>
+  </div>
+  <div id="legend-wrap">
+    <div class="sb-section" style="border-bottom:none;">
+      <div class="sb-title">Domains</div>
+      <div id="legend-controls">
+        <label><input type="checkbox" class="cb" id="select-all" checked><span id="select-all-label">Select all</span></label>
+      </div>
+      <div id="legend"></div>
+    </div>
+  </div>
+  <div id="stats">30 tables · 52 FK edges · 8 domains</div>
+</div>
+
 <script>
-const nodes = [{"id": "user", "domain": "Identity & Org", "cols": ["id PK", "email UQ", "display_name", "job_title", "job_level", "org_unit_id FK", "status", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "user_identity", "domain": "Identity & Org", "cols": ["id PK", "user_id FK", "auth_provider", "auth_uid", "created_at"]}, {"id": "org_unit", "domain": "Identity & Org", "cols": ["id PK", "name", "parent_id FK", "unit_type", "created_at", "updated_at"]}, {"id": "role", "domain": "Identity & Org", "cols": ["id PK", "name", "description", "role_type", "created_at"]}, {"id": "user_role", "domain": "Identity & Org", "cols": ["user_id FK", "role_id FK", "valid_from", "valid_to", "granted_by FK", "created_at"]}, {"id": "account", "domain": "Customer", "cols": ["id PK", "name", "domain", "slug UQ", "industry", "health_data JSONB", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "contact", "domain": "Customer", "cols": ["id PK", "account_id FK", "email UQ", "name", "title", "role", "created_at", "updated_at"]}, {"id": "deal", "domain": "Customer", "cols": ["id PK", "account_id FK", "owner_user_id FK", "org_unit_id FK", "name", "stage", "status", "close_date", "amount", "technical_commit JSONB", "meddpicc JSONB", "ai_agent", "copilot", "freshcaller", "other_addons", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "deal_contact", "domain": "Customer", "cols": ["deal_id FK", "contact_id FK", "role", "first_seen_at", "last_seen_at"]}, {"id": "activity", "domain": "Activity & Call", "cols": ["id PK", "deal_id FK", "account_id FK", "owner_user_id FK", "org_unit_id FK", "activity_type", "subject", "description", "occurred_at", "duration_minutes", "source_integration FK", "external_ref", "sync_state", "created_at", "updated_at"]}, {"id": "pre_call", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK 1:1", "deal_id FK", "research_brief JSONB", "input_snapshot JSONB", "generated_at", "created_at"]}, {"id": "post_call", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK 1:1", "deal_id FK", "transcript_ref", "analysis JSONB", "detail JSONB", "created_at", "updated_at"]}, {"id": "call_participant", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK", "contact_id FK", "participant_role", "created_at"]}, {"id": "task", "domain": "Activity & Call", "cols": ["id PK", "activity_id FK", "deal_id FK", "owner_user_id FK", "title", "description", "status", "due_date", "source", "created_at", "updated_at"]}, {"id": "rubric_theme", "domain": "Scoring", "cols": ["id PK", "name", "description", "display_order", "status", "created_at"]}, {"id": "rubric", "domain": "Scoring", "cols": ["id PK", "rubric_theme_id FK", "name", "description", "version", "display_order", "effective_from", "effective_to", "created_at"]}, {"id": "rubric_parameter", "domain": "Scoring", "cols": ["id PK", "rubric_id FK", "name", "description", "weight", "display_order", "created_at"]}, {"id": "scorecard", "domain": "Scoring", "cols": ["id PK", "activity_id FK 1:1", "owner_user_id FK", "rubric_id FK", "composite_score", "se_camera", "customer_camera", "created_at"]}, {"id": "scorecard_line", "domain": "Scoring", "cols": ["id PK", "scorecard_id FK", "rubric_parameter_id FK", "score", "evidence", "created_at"]}, {"id": "score_override", "domain": "Scoring", "cols": ["id PK", "scorecard_line_id FK", "previous_score", "new_score", "reason", "created_by FK", "created_at"]}, {"id": "product_signal", "domain": "Product Intelligence", "cols": ["id PK", "post_call_id FK", "deal_id FK", "account_id FK", "owner_user_id FK", "signal_type", "fw_product", "capability_area", "title", "description", "evidence", "deal_impact", "status", "reviewed_by FK", "cluster_id FK", "created_at", "updated_at"]}, {"id": "signal_cluster", "domain": "Product Intelligence", "cols": ["id PK", "name", "capability_area", "description", "signal_count", "status", "created_at", "updated_at"]}, {"id": "coaching_focus", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "set_by_user_id FK", "rubric_theme_id FK", "description", "target", "status", "timeframe_start", "timeframe_end", "created_at", "updated_at"]}, {"id": "coaching_reflection", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "coaching_focus_id FK", "activity_id FK", "reflection_text", "created_at"]}, {"id": "coaching_recommendation", "domain": "Coaching", "cols": ["id PK", "se_user_id FK", "rubric_theme_id FK", "recommendation_text", "evidence_summary", "status", "generated_at", "dismissed_at"]}, {"id": "integration", "domain": "Integration", "cols": ["id PK", "provider", "display_name", "auth_type", "credentials_ref", "config JSONB", "status", "last_healthy_at", "created_at", "updated_at"]}, {"id": "sync_job", "domain": "Integration", "cols": ["id PK", "integration_id FK", "direction", "entity_type", "status", "records_processed", "records_failed", "error_summary", "started_at", "completed_at"]}, {"id": "webhook_event", "domain": "Integration", "cols": ["id PK", "integration_id FK", "event_type", "payload JSONB", "processing_status", "linked_entity_type", "linked_entity_id", "received_at", "processed_at"]}, {"id": "ai_run", "domain": "Platform", "cols": ["id PK", "activity_id FK", "run_type", "model", "prompt_version", "input_tokens", "output_tokens", "cost_usd", "latency_ms", "created_at"]}, {"id": "audit_log", "domain": "Platform", "cols": ["id PK", "user_id FK", "entity_type", "entity_id", "action", "payload JSONB", "created_at"]}];
-const links = [{"source": "user", "target": "org_unit", "label": "org_unit_id"}, {"source": "user_identity", "target": "user", "label": "user_id"}, {"source": "user_role", "target": "user", "label": "user_id"}, {"source": "user_role", "target": "role", "label": "role_id"}, {"source": "user_role", "target": "user", "label": "granted_by"}, {"source": "contact", "target": "account", "label": "account_id"}, {"source": "deal", "target": "account", "label": "account_id"}, {"source": "deal", "target": "user", "label": "owner_user_id"}, {"source": "deal", "target": "org_unit", "label": "org_unit_id"}, {"source": "deal_contact", "target": "deal", "label": "deal_id"}, {"source": "deal_contact", "target": "contact", "label": "contact_id"}, {"source": "activity", "target": "deal", "label": "deal_id"}, {"source": "activity", "target": "account", "label": "account_id"}, {"source": "activity", "target": "user", "label": "owner_user_id"}, {"source": "activity", "target": "org_unit", "label": "org_unit_id"}, {"source": "activity", "target": "integration", "label": "source_integration"}, {"source": "pre_call", "target": "activity", "label": "activity_id"}, {"source": "pre_call", "target": "deal", "label": "deal_id"}, {"source": "post_call", "target": "activity", "label": "activity_id"}, {"source": "post_call", "target": "deal", "label": "deal_id"}, {"source": "call_participant", "target": "activity", "label": "activity_id"}, {"source": "call_participant", "target": "contact", "label": "contact_id"}, {"source": "task", "target": "activity", "label": "activity_id"}, {"source": "task", "target": "deal", "label": "deal_id"}, {"source": "task", "target": "user", "label": "owner_user_id"}, {"source": "rubric", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "rubric_parameter", "target": "rubric", "label": "rubric_id"}, {"source": "scorecard", "target": "activity", "label": "activity_id"}, {"source": "scorecard", "target": "user", "label": "owner_user_id"}, {"source": "scorecard", "target": "rubric", "label": "rubric_id"}, {"source": "scorecard_line", "target": "scorecard", "label": "scorecard_id"}, {"source": "scorecard_line", "target": "rubric_parameter", "label": "rubric_parameter_id"}, {"source": "score_override", "target": "scorecard_line", "label": "scorecard_line_id"}, {"source": "score_override", "target": "user", "label": "created_by"}, {"source": "product_signal", "target": "post_call", "label": "post_call_id"}, {"source": "product_signal", "target": "deal", "label": "deal_id"}, {"source": "product_signal", "target": "account", "label": "account_id"}, {"source": "product_signal", "target": "user", "label": "owner_user_id"}, {"source": "product_signal", "target": "user", "label": "reviewed_by"}, {"source": "product_signal", "target": "signal_cluster", "label": "cluster_id"}, {"source": "coaching_focus", "target": "user", "label": "se_user_id"}, {"source": "coaching_focus", "target": "user", "label": "set_by_user_id"}, {"source": "coaching_focus", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "coaching_reflection", "target": "user", "label": "se_user_id"}, {"source": "coaching_reflection", "target": "coaching_focus", "label": "coaching_focus_id"}, {"source": "coaching_reflection", "target": "activity", "label": "activity_id"}, {"source": "coaching_recommendation", "target": "user", "label": "se_user_id"}, {"source": "coaching_recommendation", "target": "rubric_theme", "label": "rubric_theme_id"}, {"source": "sync_job", "target": "integration", "label": "integration_id"}, {"source": "webhook_event", "target": "integration", "label": "integration_id"}, {"source": "ai_run", "target": "activity", "label": "activity_id"}, {"source": "audit_log", "target": "user", "label": "user_id"}];
-const colors = {"Identity & Org": "#4e79a7", "Customer": "#f28e2b", "Activity & Call": "#e15759", "Scoring": "#76b7b2", "Product Intelligence": "#59a14f", "Coaching": "#edc948", "Integration": "#b07aa1", "Platform": "#ff9da7"};
+// ============================================================
+// DATA: domains, tables (with columns), FK edges
+// ============================================================
+const DOMAINS = [
+  { id: "identity",   label: "Identity & Org",        color: "#4E79A7" },
+  { id: "customer",   label: "Customer",             color: "#F28E2B" },
+  { id: "activity",   label: "Activity & Call",      color: "#59A14F" },
+  { id: "scoring",    label: "Scoring",              color: "#E15759" },
+  { id: "product",    label: "Product Intelligence", color: "#B07AA1" },
+  { id: "coaching",   label: "Coaching",             color: "#76B7B2" },
+  { id: "integration",label: "Integration",          color: "#EDC948" },
+  { id: "platform",   label: "Platform",            color: "#FF9DA7" },
+];
+const DOMAIN_COLOR = Object.fromEntries(DOMAINS.map(d => [d.id, d.color]));
+const DOMAIN_LABEL = Object.fromEntries(DOMAINS.map(d => [d.id, d.label]));
 
-const width = window.innerWidth, height = window.innerHeight - 120;
-const svg = d3.select("#graph").append("svg").attr("width", width).attr("height", height);
-const g = svg.append("g");
+// column flags: PK / FK / UQ  (JSONB shown as type)
+// Each column: { name, flags:[pk|fk|uq], fkTo?: "table.col", type? }
+const TABLES = [
+  { t: "user", d: "identity", cols: [
+    { n: "id", f: ["pk"] }, { n: "email", f: ["uq"] }, { n: "display_name" },
+    { n: "job_title" }, { n: "job_level" }, { n: "org_unit_id", f: ["fk"] },
+    { n: "status" }, { n: "external_ref" }, { n: "sync_state" },
+    { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "user_identity", d: "identity", cols: [
+    { n: "id", f: ["pk"] }, { n: "user_id", f: ["fk"] }, { n: "auth_provider" },
+    { n: "auth_uid" }, { n: "created_at" },
+  ]},
+  { t: "org_unit", d: "identity", cols: [
+    { n: "id", f: ["pk"] }, { n: "name" }, { n: "parent_id", f: ["fk"] },
+    { n: "unit_type" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "role", d: "identity", cols: [
+    { n: "id", f: ["pk"] }, { n: "name" }, { n: "description" },
+    { n: "role_type" }, { n: "created_at" },
+  ]},
+  { t: "user_role", d: "identity", cols: [
+    { n: "user_id", f: ["fk"] }, { n: "role_id", f: ["fk"] }, { n: "valid_from" },
+    { n: "valid_to" }, { n: "granted_by", f: ["fk"] }, { n: "created_at" },
+  ]},
+  { t: "account", d: "customer", cols: [
+    { n: "id", f: ["pk"] }, { n: "name" }, { n: "domain" }, { n: "slug", f: ["uq"] },
+    { n: "industry" }, { n: "health_data", type: "JSONB" }, { n: "external_ref" },
+    { n: "sync_state" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "contact", d: "customer", cols: [
+    { n: "id", f: ["pk"] }, { n: "account_id", f: ["fk"] }, { n: "email", f: ["uq"] },
+    { n: "name" }, { n: "title" }, { n: "role" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "deal", d: "customer", cols: [
+    { n: "id", f: ["pk"] }, { n: "account_id", f: ["fk"] }, { n: "owner_user_id", f: ["fk"] },
+    { n: "org_unit_id", f: ["fk"] }, { n: "name" }, { n: "stage" }, { n: "status" },
+    { n: "close_date" }, { n: "amount" }, { n: "technical_commit", type: "JSONB" },
+    { n: "meddpicc", type: "JSONB" }, { n: "ai_agent" }, { n: "copilot" },
+    { n: "freshcaller" }, { n: "other_addons" }, { n: "external_ref" },
+    { n: "sync_state" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "deal_contact", d: "customer", cols: [
+    { n: "deal_id", f: ["fk"] }, { n: "contact_id", f: ["fk"] }, { n: "role" },
+    { n: "first_seen_at" }, { n: "last_seen_at" },
+  ]},
+  { t: "activity", d: "activity", cols: [
+    { n: "id", f: ["pk"] }, { n: "deal_id", f: ["fk"] }, { n: "account_id", f: ["fk"] },
+    { n: "owner_user_id", f: ["fk"] }, { n: "org_unit_id", f: ["fk"] },
+    { n: "activity_type" }, { n: "subject" }, { n: "description" }, { n: "occurred_at" },
+    { n: "duration_minutes" }, { n: "source_integration", f: ["fk"] },
+    { n: "external_ref" }, { n: "sync_state" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "pre_call", d: "activity", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"], note: "1:1" }, { n: "deal_id", f: ["fk"] },
+    { n: "research_brief", type: "JSONB" }, { n: "input_snapshot", type: "JSONB" },
+    { n: "generated_at" }, { n: "created_at" },
+  ]},
+  { t: "post_call", d: "activity", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"], note: "1:1" }, { n: "deal_id", f: ["fk"] },
+    { n: "transcript_ref" }, { n: "analysis", type: "JSONB" }, { n: "detail", type: "JSONB" },
+    { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "call_participant", d: "activity", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"] }, { n: "contact_id", f: ["fk"] },
+    { n: "participant_role" }, { n: "created_at" },
+  ]},
+  { t: "task", d: "activity", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"] }, { n: "deal_id", f: ["fk"] },
+    { n: "owner_user_id", f: ["fk"] }, { n: "title" }, { n: "description" },
+    { n: "status" }, { n: "due_date" }, { n: "source" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "rubric_theme", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "name" }, { n: "description" }, { n: "display_order" },
+    { n: "status" }, { n: "created_at" },
+  ]},
+  { t: "rubric", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "rubric_theme_id", f: ["fk"] }, { n: "name" }, { n: "description" },
+    { n: "version" }, { n: "display_order" }, { n: "effective_from" }, { n: "effective_to" },
+    { n: "created_at" },
+  ]},
+  { t: "rubric_parameter", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "rubric_id", f: ["fk"] }, { n: "name" }, { n: "description" },
+    { n: "weight" }, { n: "display_order" }, { n: "created_at" },
+  ]},
+  { t: "scorecard", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"], note: "1:1" }, { n: "owner_user_id", f: ["fk"] },
+    { n: "rubric_id", f: ["fk"] }, { n: "composite_score" }, { n: "se_camera" },
+    { n: "customer_camera" }, { n: "created_at" },
+  ]},
+  { t: "scorecard_line", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "scorecard_id", f: ["fk"] }, { n: "rubric_parameter_id", f: ["fk"] },
+    { n: "score" }, { n: "evidence" }, { n: "created_at" },
+  ]},
+  { t: "score_override", d: "scoring", cols: [
+    { n: "id", f: ["pk"] }, { n: "scorecard_line_id", f: ["fk"] }, { n: "previous_score" },
+    { n: "new_score" }, { n: "reason" }, { n: "created_by", f: ["fk"] }, { n: "created_at" },
+  ]},
+  { t: "product_signal", d: "product", cols: [
+    { n: "id", f: ["pk"] }, { n: "post_call_id", f: ["fk"] }, { n: "deal_id", f: ["fk"] },
+    { n: "account_id", f: ["fk"] }, { n: "owner_user_id", f: ["fk"] }, { n: "signal_type" },
+    { n: "fw_product" }, { n: "capability_area" }, { n: "title" }, { n: "description" },
+    { n: "evidence" }, { n: "deal_impact" }, { n: "status" }, { n: "reviewed_by", f: ["fk"] },
+    { n: "cluster_id", f: ["fk"] }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "signal_cluster", d: "product", cols: [
+    { n: "id", f: ["pk"] }, { n: "name" }, { n: "capability_area" }, { n: "description" },
+    { n: "signal_count" }, { n: "status" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "coaching_focus", d: "coaching", cols: [
+    { n: "id", f: ["pk"] }, { n: "se_user_id", f: ["fk"] }, { n: "set_by_user_id", f: ["fk"] },
+    { n: "rubric_theme_id", f: ["fk"] }, { n: "description" }, { n: "target" }, { n: "status" },
+    { n: "timeframe_start" }, { n: "timeframe_end" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "coaching_reflection", d: "coaching", cols: [
+    { n: "id", f: ["pk"] }, { n: "se_user_id", f: ["fk"] }, { n: "coaching_focus_id", f: ["fk"] },
+    { n: "activity_id", f: ["fk"] }, { n: "reflection_text" }, { n: "created_at" },
+  ]},
+  { t: "coaching_recommendation", d: "coaching", cols: [
+    { n: "id", f: ["pk"] }, { n: "se_user_id", f: ["fk"] }, { n: "rubric_theme_id", f: ["fk"] },
+    { n: "recommendation_text" }, { n: "evidence_summary" }, { n: "status" },
+    { n: "generated_at" }, { n: "dismissed_at" },
+  ]},
+  { t: "integration", d: "integration", cols: [
+    { n: "id", f: ["pk"] }, { n: "provider" }, { n: "display_name" }, { n: "auth_type" },
+    { n: "credentials_ref" }, { n: "config", type: "JSONB" }, { n: "status" },
+    { n: "last_healthy_at" }, { n: "created_at" }, { n: "updated_at" },
+  ]},
+  { t: "sync_job", d: "integration", cols: [
+    { n: "id", f: ["pk"] }, { n: "integration_id", f: ["fk"] }, { n: "direction" },
+    { n: "entity_type" }, { n: "status" }, { n: "records_processed" }, { n: "records_failed" },
+    { n: "error_summary" }, { n: "started_at" }, { n: "completed_at" },
+  ]},
+  { t: "webhook_event", d: "integration", cols: [
+    { n: "id", f: ["pk"] }, { n: "integration_id", f: ["fk"] }, { n: "event_type" },
+    { n: "payload", type: "JSONB" }, { n: "processing_status" }, { n: "linked_entity_type" },
+    { n: "linked_entity_id" }, { n: "received_at" }, { n: "processed_at" },
+  ]},
+  { t: "ai_run", d: "platform", cols: [
+    { n: "id", f: ["pk"] }, { n: "activity_id", f: ["fk"] }, { n: "run_type" }, { n: "model" },
+    { n: "prompt_version" }, { n: "input_tokens" }, { n: "output_tokens" }, { n: "cost_usd" },
+    { n: "latency_ms" }, { n: "created_at" },
+  ]},
+  { t: "audit_log", d: "platform", cols: [
+    { n: "id", f: ["pk"] }, { n: "user_id", f: ["fk"] }, { n: "entity_type" }, { n: "entity_id" },
+    { n: "action" }, { n: "payload", type: "JSONB" }, { n: "created_at" },
+  ]},
+];
 
-const legend = d3.select("#legend");
-Object.entries(colors).forEach(([d, c]) => {
-  legend.append("span").html(`<span class="swatch" style="background:${c}"></span>${d}`);
+// FK edges: from table → to table, via column (with optional role label)
+const EDGES = [
+  ["user","org_unit","org_unit_id"],
+  ["user_identity","user","user_id"],
+  ["user_role","user","user_id"],
+  ["user_role","role","role_id"],
+  ["user_role","user","granted_by"],
+  ["contact","account","account_id"],
+  ["deal","account","account_id"],
+  ["deal","user","owner_user_id"],
+  ["deal","org_unit","org_unit_id"],
+  ["deal_contact","deal","deal_id"],
+  ["deal_contact","contact","contact_id"],
+  ["activity","deal","deal_id"],
+  ["activity","account","account_id"],
+  ["activity","user","owner_user_id"],
+  ["activity","org_unit","org_unit_id"],
+  ["activity","integration","source_integration"],
+  ["pre_call","activity","activity_id"],
+  ["pre_call","deal","deal_id"],
+  ["post_call","activity","activity_id"],
+  ["post_call","deal","deal_id"],
+  ["call_participant","activity","activity_id"],
+  ["call_participant","contact","contact_id"],
+  ["task","activity","activity_id"],
+  ["task","deal","deal_id"],
+  ["task","user","owner_user_id"],
+  ["rubric","rubric_theme","rubric_theme_id"],
+  ["rubric_parameter","rubric","rubric_id"],
+  ["scorecard","activity","activity_id"],
+  ["scorecard","user","owner_user_id"],
+  ["scorecard","rubric","rubric_id"],
+  ["scorecard_line","scorecard","scorecard_id"],
+  ["scorecard_line","rubric_parameter","rubric_parameter_id"],
+  ["score_override","scorecard_line","scorecard_line_id"],
+  ["score_override","user","created_by"],
+  ["product_signal","post_call","post_call_id"],
+  ["product_signal","deal","deal_id"],
+  ["product_signal","account","account_id"],
+  ["product_signal","user","owner_user_id"],
+  ["product_signal","user","reviewed_by"],
+  ["product_signal","signal_cluster","cluster_id"],
+  ["coaching_focus","user","se_user_id"],
+  ["coaching_focus","user","set_by_user_id"],
+  ["coaching_focus","rubric_theme","rubric_theme_id"],
+  ["coaching_reflection","user","se_user_id"],
+  ["coaching_reflection","coaching_focus","coaching_focus_id"],
+  ["coaching_reflection","activity","activity_id"],
+  ["coaching_recommendation","user","se_user_id"],
+  ["coaching_recommendation","rubric_theme","rubric_theme_id"],
+  ["sync_job","integration","integration_id"],
+  ["webhook_event","integration","integration_id"],
+  ["ai_run","activity","activity_id"],
+  ["audit_log","user","user_id"],
+];
+
+const tableByDomain = {};
+TABLES.forEach(t => { (tableByDomain[t.d] ||= []).push(t.t); });
+
+// ============================================================
+// HTML-escape helper
+// ============================================================
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+
+// ============================================================
+// Build graph data
+// ============================================================
+const nodes = TABLES.map(t => {
+  const fkCount = t.cols.filter(c => c.f && c.f.includes("fk")).length;
+  return {
+    id: t.t,
+    label: t.t,
+    domain: t.d,
+    color: DOMAIN_COLOR[t.d],
+    cols: t.cols,
+    fkCount,
+    degree: 0,
+  };
 });
+const nodeById = Object.fromEntries(nodes.map(n => [n.id, n]));
 
+const links = EDGES.map((e, i) => {
+  const [from, to, via] = e;
+  return { id: "e" + i, source: from, target: to, via, sameDomain: nodeById[from].domain === nodeById[to].domain };
+});
+links.forEach(l => { nodeById[l.source].degree++; nodeById[l.target].degree++; });
+
+// node radius: scaled by degree
+nodes.forEach(n => { n.r = 11 + Math.min(n.degree, 8) * 1.5; });
+
+document.getElementById("stats").textContent =
+  `${nodes.length} tables · ${links.length} FK edges · ${DOMAINS.length} domains`;
+
+// ============================================================
+// SVG setup
+// ============================================================
+const container = document.getElementById("graph");
+const svg = d3.select("svg.graph");
+const tooltip = document.getElementById("tooltip");
+
+let width = container.clientWidth;
+let height = container.clientHeight;
+svg.attr("viewBox", `0 0 ${width} ${height}`);
+
+// defs for arrowhead markers (one per domain color + a neutral)
+const defs = svg.append("defs");
+const markerColors = [...new Set(DOMAINS.map(d => d.color))];
+markerColors.forEach((c, i) => {
+  defs.append("marker")
+    .attr("id", "arrow-" + i)
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 9).attr("refY", 0)
+    .attr("markerWidth", 7).attr("markerHeight", 7)
+    .attr("orient", "auto")
+    .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", c).attr("class", "edge-marker");
+});
+// generic muted marker for non-highlighted edges
+defs.append("marker")
+  .attr("id", "arrow-mute")
+  .attr("viewBox", "0 -5 10 10")
+  .attr("refX", 9).attr("refY", 0)
+  .attr("markerWidth", 7).attr("markerHeight", 7)
+  .attr("orient", "auto")
+  .append("path").attr("d", "M0,-5L10,0L0,5").attr("fill", "#2f3a52");
+
+const colorIdx = {};
+markerColors.forEach((c, i) => colorIdx[c] = i);
+
+const g = svg.append("g").attr("class", "zoom-layer");
+
+const linkG = g.append("g").attr("class", "links");
+const labelG = g.append("g").attr("class", "link-labels");
+const nodeG = g.append("g").attr("class", "nodes");
+
+// ============================================================
+// Force simulation
+// ============================================================
 const sim = d3.forceSimulation(nodes)
-  .force("link", d3.forceLink(links).id(d => d.id).distance(90))
-  .force("charge", d3.forceManyBody().strength(-300))
-  .force("center", d3.forceCenter(width/2, height/2))
-  .force("collide", d3.forceCollide().radius(40));
+  .force("link", d3.forceLink(links).id(d => d.id)
+    .distance(l => l.sameDomain ? 70 : 130)
+    .strength(l => l.sameDomain ? 0.6 : 0.25))
+  .force("charge", d3.forceManyBody().strength(-380))
+  .force("center", d3.forceCenter(width / 2, height / 2))
+  .force("collide", d3.forceCollide().radius(d => d.r + 14))
+  .force("x", d3.forceX(width / 2).strength(0.04))
+  .force("y", d3.forceY(height / 2).strength(0.06))
+  .alphaDecay(0.025);
 
-const link = g.append("g").selectAll("line").data(links).join("line")
-  .attr("class", "link").attr("stroke-width", 1.2);
+// Draw links
+const link = linkG.selectAll("path")
+  .data(links)
+  .join("path")
+  .attr("class", "link")
+  .attr("marker-end", "url(#arrow-mute)");
 
-const linkLabel = g.append("g").selectAll("text").data(links).join("text")
-  .attr("class", "link-label").text(d => d.label);
+// Curved link path generator (avoids node overlap)
+function linkPath(d) {
+  const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+  const dx = tx - sx, dy = ty - sy;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  // trim endpoints by node radius so arrow lands on border
+  const sR = (d.source.r || 12) + 2;
+  const tR = (d.target.r || 12) + 4;
+  const x1 = sx + ux * sR, y1 = sy + uy * sR;
+  const x2 = tx - ux * tR, y2 = ty - uy * tR;
+  // mild quadratic curve offset perpendicular
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const off = Math.min(34, Math.hypot(x2 - x1, y2 - y1) * 0.12);
+  const px = -uy * off, py = ux * off;
+  return `M${x1},${y1} Q${mx + px},${my + py} ${x2},${y2}`;
+}
 
-const node = g.append("g").selectAll("g").data(nodes).join("g")
-  .call(d3.drag().on("start", dragstart).on("drag", dragged).on("end", dragend));
+// Edge labels (FK column name)
+const linkLabel = labelG.selectAll("text")
+  .data(links)
+  .join("text")
+  .attr("class", "link-label visible")
+  .attr("text-anchor", "middle")
+  .attr("dy", -4)
+  .text(d => d.via);
 
-node.append("circle").attr("r", 22).attr("fill", d => colors[d.domain]).attr("stroke", "#fff").attr("stroke-width", 1);
-node.append("text").attr("dy", 4).attr("text-anchor", "middle").text(d => d.id);
+let showLabels = true;
 
-node.on("mouseover", function(ev, d) {
-  const tip = d3.select("#tooltip");
-  tip.style("display","block")
-     .html(`<b>${d.id}</b> <span style="color:${colors[d.domain]}">(${d.domain})</span><br><small>${d.cols.join(", ")}</small>`);
-}).on("mousemove", function(ev) {
-  d3.select("#tooltip").style("left", (ev.pageX+12)+"px").style("top", (ev.pageY+12)+"px");
-}).on("mouseout", function() { d3.select("#tooltip").style("display","none"); });
+// Drag handlers
+function dragstarted(event, d) {
+  if (!event.active) sim.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragged(event, d) {
+  d.fx = event.x; d.fy = event.y;
+}
+function dragended(event, d) {
+  if (!event.active) sim.alphaTarget(0);
+  d.fx = null; d.fy = null;
+}
 
+// Draw nodes
+const node = nodeG.selectAll("g.node")
+  .data(nodes)
+  .join("g")
+  .attr("class", "node")
+  .call(d3.drag()
+    .on("start", dragstarted)
+    .on("drag", dragged)
+    .on("end", dragended));
+
+node.append("circle")
+  .attr("r", d => d.r)
+  .attr("fill", d => d.color);
+
+node.append("text")
+  .attr("dy", d => d.r + 13)
+  .attr("text-anchor", "middle")
+  .text(d => d.label);
+
+// ============================================================
+// Tick
+// ============================================================
 sim.on("tick", () => {
-  link.attr("x1", d=>d.source.x).attr("y1", d=>d.source.y).attr("x2", d=>d.target.x).attr("y2", d=>d.target.y);
-  linkLabel.attr("x", d=>(d.source.x+d.target.x)/2).attr("y", d=>(d.source.y+d.target.y)/2);
-  node.attr("transform", d=>`translate(${d.x},${d.y})`);
+  link.attr("d", linkPath);
+  node.attr("transform", d => `translate(${d.x},${d.y})`);
+  linkLabel.attr("x", d => (d.source.x + d.target.x) / 2)
+           .attr("y", d => (d.source.y + d.target.y) / 2);
 });
 
-const zoom = d3.zoom().scaleExtent([0.2, 4]).on("zoom", ev => g.attr("transform", ev.transform));
+sim.alpha(1).restart();
+
+// ============================================================
+// Zoom + pan
+// ============================================================
+const zoom = d3.zoom()
+  .scaleExtent([0.15, 6])
+  .on("zoom", e => g.attr("transform", e.transform));
 svg.call(zoom);
 
-function dragstart(ev, d) { if(!ev.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; }
-function dragged(ev, d) { d.fx=ev.x; d.fy=ev.y; }
-function dragend(ev, d) { if(!ev.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }
+function fit() {
+  const bounds = g.node().getBBox();
+  if (!isFinite(bounds.width) || bounds.width === 0) return;
+  const pad = 60;
+  const scale = Math.min((width - pad * 2) / bounds.width, (height - pad * 2) / bounds.height, 1.4);
+  const tx = (width - bounds.width * scale) / 2 - bounds.x * scale;
+  const ty = (height - bounds.height * scale) / 2 - bounds.y * scale;
+  svg.transition().duration(600).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+window.addEventListener("resize", () => {
+  width = container.clientWidth; height = container.clientHeight;
+  svg.attr("viewBox", `0 0 ${width} ${height}`);
+  sim.force("center", d3.forceCenter(width/2, height/2));
+  sim.force("x", d3.forceX(width/2).strength(0.04));
+  sim.force("y", d3.forceY(height/2).strength(0.06));
+  sim.alpha(0.3).restart();
+});
+
+// ============================================================
+// Controls
+// ============================================================
+document.getElementById("btn-zoom-in").onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1.35);
+document.getElementById("btn-zoom-out").onclick = () => svg.transition().duration(200).call(zoom.scaleBy, 1/1.35);
+document.getElementById("btn-fit").onclick = fit;
+document.getElementById("btn-relayout").onclick = () => sim.alpha(1).restart();
+const btnLabels = document.getElementById("btn-labels");
+btnLabels.onclick = () => {
+  showLabels = !showLabels;
+  btnLabels.classList.toggle("active", showLabels);
+  labelG.style("display", showLabels ? null : "none");
+};
+
+// ============================================================
+// Interactions: hover, click, search, legend
+// ============================================================
+let selectedId = null;
+
+const connected = new Map(); // nodeId -> Set of neighbor node ids
+links.forEach(l => {
+  const s = typeof l.source === "object" ? l.source.id : l.source;
+  const t = typeof l.target === "object" ? l.target.id : l.target;
+  if (!connected.has(s)) connected.set(s, new Set());
+  if (!connected.has(t)) connected.set(t, new Set());
+  connected.get(s).add(t);
+  connected.get(t).add(s);
+});
+
+function highlightNeighbors(id) {
+  const neigh = connected.get(id) || new Set();
+  node.classed("dimmed", d => d.id !== id && !neigh.has(d.id))
+      .classed("focused", d => neigh.has(d.id))
+      .classed("selected", d => d.id === id);
+  link.classed("dimmed", d => {
+      const s = d.source.id || d.source, t = d.target.id || d.target;
+      return s !== id && t !== id;
+    })
+    .classed("highlighted", d => {
+      const s = d.source.id || d.source, t = d.target.id || d.target;
+      return s === id || t === id;
+    })
+    .attr("marker-end", d => {
+      const s = d.source.id || d.source, t = d.target.id || d.target;
+      return (s === id || t === id) ? `url(#arrow-${colorIdx[nodeById[t].color]})` : "url(#arrow-mute)";
+    });
+}
+
+function clearHighlight() {
+  node.classed("dimmed", false).classed("focused", false).classed("selected", false);
+  link.classed("dimmed", false).classed("highlighted", false).attr("marker-end", "url(#arrow-mute)");
+}
+
+function colHTML(c) {
+  let cls = "";
+  let tag = "";
+  if (c.f && c.f.includes("pk")) { cls = "pk"; tag = "PK "; }
+  else if (c.f && c.f.includes("fk")) { cls = "fk"; tag = "FK "; }
+  else if (c.f && c.f.includes("uq")) { cls = "uq"; tag = "UQ "; }
+  const typeStr = c.type ? ` <span style="color:#7d8590">:${c.type}</span>` : "";
+  const note = c.note ? ` <span style="color:#a5d6ff">[${esc(c.note)}]</span>` : "";
+  return `<div class="col"><span class="${cls}">${tag}</span>${esc(c.n)}${typeStr}${note}</div>`;
+}
+
+function showInfo(id) {
+  const n = nodeById[id];
+  if (!n) return;
+  const neigh = [...(connected.get(id) || [])];
+  const inLinks = links.filter(l => (l.target.id || l.target) === id);
+  const outLinks = links.filter(l => (l.source.id || l.source) === id);
+  let fkHTML = "";
+  const fkRows = [
+    ...outLinks.map(l => ({ from: id, to: (l.target.id||l.target), via: l.via, dir: "→" })),
+    ...inLinks.map(l => ({ from: (l.source.id||l.source), to: id, via: l.via, dir: "←" })),
+  ];
+  if (fkRows.length) {
+    fkHTML = `<div class="cols-label">Foreign keys (${fkRows.length})</div>` +
+      fkRows.map(r => `<div class="col"><span class="fk">FK</span> ${esc(r.from)} ${r.dir} ${esc(r.to)} <span style="color:#7d8590">via ${esc(r.via)}</span></div>`).join("");
+  }
+  const colsHTML = `<div class="cols-label">Columns (${n.cols.length})</div>` +
+    n.cols.map(colHTML).join("");
+  document.getElementById("info-content").innerHTML =
+    `<span class="tname">${esc(n.label)}</span>` +
+    `<span class="tdomain" style="color:${n.color}">${esc(DOMAIN_LABEL[n.domain])}</span>` +
+    colsHTML + fkHTML;
+}
+
+function focusNode(id) {
+  selectedId = id;
+  highlightNeighbors(id);
+  showInfo(id);
+  const n = nodeById[id];
+  if (n && n.x != null) {
+    const transform = d3.zoomTransform(svg.node());
+    const [cx, cy] = [width / 2, height / 2];
+    const scale = Math.max(transform.k, 1.2);
+    const tx = cx - n.x * scale, ty = cy - n.y * scale;
+    svg.transition().duration(550).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+  }
+}
+
+// hover tooltip
+node.on("mouseenter", (e, d) => {
+  const neigh = [...(connected.get(d.id) || [])];
+  const neighStr = neigh.length ? neigh.map(n => esc(n)).join(", ") : "—";
+  const cols = d.cols.map(c => {
+    let cls = ""; let tag = "";
+    if (c.f && c.f.includes("pk")) { cls = "pk"; tag = "PK "; }
+    else if (c.f && c.f.includes("fk")) { cls = "fk"; tag = "FK "; }
+    else if (c.f && c.f.includes("uq")) { cls = "uq"; tag = "UQ "; }
+    const typeStr = c.type ? ` <span style="color:#7d8590">:${c.type}</span>` : "";
+    return `<div><span class="${cls}">${tag}</span>${esc(c.n)}${typeStr}</div>`;
+  }).join("");
+  tooltip.innerHTML =
+    `<div class="tt-name">${esc(d.label)}</div>` +
+    `<div class="tt-domain" style="color:${d.color}">${esc(DOMAIN_LABEL[d.domain])} · ${d.cols.length} cols · ${d.degree} edges</div>` +
+    `<div class="tt-cols">${cols}</div>` +
+    `<div class="tt-fk">${neigh.length} related: ${neighStr}</div>`;
+  tooltip.style.opacity = 1;
+})
+.on("mousemove", e => {
+  const r = container.getBoundingClientRect();
+  let x = e.clientX - r.left + 14, y = e.clientY - r.top + 14;
+  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+  if (x + tw > r.width - 8) x = e.clientX - r.left - tw - 14;
+  if (y + th > r.height - 8) y = e.clientY - r.top - th - 8;
+  tooltip.style.left = x + "px";
+  tooltip.style.top = y + "px";
+})
+.on("mouseleave", () => { tooltip.style.opacity = 0; })
+.on("click", (e, d) => { e.stopPropagation(); focusNode(d.id); });
+
+svg.on("click", () => {
+  selectedId = null;
+  clearHighlight();
+  document.getElementById("info-content").innerHTML =
+    '<span class="empty">Click a table to inspect its columns &amp; relationships.</span>';
+});
+
+// ============================================================
+// Search
+// ============================================================
+const searchInput = document.getElementById("search");
+const searchResults = document.getElementById("search-results");
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.toLowerCase().trim();
+  searchResults.innerHTML = "";
+  if (!q) { searchResults.classList.remove("active"); return; }
+  const matches = nodes.filter(n => n.id.toLowerCase().includes(q)).slice(0, 30);
+  if (!matches.length) { searchResults.classList.remove("active"); return; }
+  searchResults.classList.add("active");
+  matches.forEach(n => {
+    const el = document.createElement("div");
+    el.className = "search-item";
+    el.innerHTML = `<span class="swatch" style="background:${n.color}"></span><span>${esc(n.id)}</span><span style="color:#5c6675;margin-left:auto">${esc(DOMAIN_LABEL[n.domain])}</span>`;
+    el.onclick = () => {
+      focusNode(n.id);
+      searchResults.classList.remove("active");
+      searchInput.value = "";
+    };
+    searchResults.appendChild(el);
+  });
+});
+document.addEventListener("click", e => {
+  if (!searchResults.contains(e.target) && e.target !== searchInput) searchResults.classList.remove("active");
+});
+
+// ============================================================
+// Legend — domain toggle (hide/show nodes + their edges)
+// ============================================================
+const hiddenDomains = new Set();
+const legendEl = document.getElementById("legend");
+const selectAllCb = document.getElementById("select-all");
+const selectAllLabel = document.getElementById("select-all-label");
+
+DOMAINS.forEach(d => {
+  const item = document.createElement("div");
+  item.className = "legend-item";
+  const count = tableByDomain[d.id].length;
+  item.innerHTML =
+    `<span class="legend-dot" style="background:${d.color}"></span>` +
+    `<span class="legend-label">${esc(d.label)}</span>` +
+    `<span class="legend-count">${count}</span>`;
+  const cb = document.createElement("input");
+  cb.type = "checkbox"; cb.className = "cb"; cb.checked = true;
+  cb.addEventListener("change", () => {
+    if (cb.checked) { hiddenDomains.delete(d.id); item.classList.remove("dimmed"); }
+    else { hiddenDomains.add(d.id); item.classList.add("dimmed"); }
+    applyDomainVisibility();
+    updateSelectAll();
+  });
+  item.prepend(cb);
+  item.onclick = e => {
+    if (e.target === cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event("change"));
+  };
+  legendEl.appendChild(item);
+});
+
+function applyDomainVisibility() {
+  node.attr("display", d => hiddenDomains.has(d.domain) ? "none" : null);
+  link.attr("display", d => {
+    const s = d.source.id || d.source, t = d.target.id || d.target;
+    return (hiddenDomains.has(nodeById[s].domain) || hiddenDomains.has(nodeById[t].domain)) ? "none" : null;
+  });
+  labelG.selectAll("text").attr("display", d => {
+    const s = d.source.id || d.source, t = d.target.id || d.target;
+    return (hiddenDomains.has(nodeById[s].domain) || hiddenDomains.has(nodeById[t].domain)) ? "none" : null;
+  });
+}
+
+function updateSelectAll() {
+  const hidden = hiddenDomains.size, total = DOMAINS.length;
+  selectAllCb.checked = hidden === 0;
+  selectAllLabel.textContent = hidden === 0 ? "Select all" : `Select all (${total - hidden}/${total})`;
+}
+selectAllCb.addEventListener("change", () => {
+  const show = selectAllCb.checked;
+  hiddenDomains.clear();
+  if (!show) DOMAINS.forEach(d => hiddenDomains.add(d.id));
+  document.querySelectorAll("#legend .legend-item").forEach((item, i) => {
+    const cb = item.querySelector("input.cb");
+    cb.checked = show;
+    item.classList.toggle("dimmed", !show);
+  });
+  applyDomainVisibility();
+  updateSelectAll();
+});
+
+// initial fit once layout settles
+sim.on("end", fit);
+setTimeout(fit, 2200);
 </script>
 </body>
 </html>
