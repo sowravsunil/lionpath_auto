@@ -7,7 +7,7 @@
 
 export { getPool, postgresReady, assertPostgresAvailable, closePool } from "./postgres-pool";
 export type { PgClient, PgPool, PostgresEnv } from "./postgres-pool";
-export { resolveSqlSession, withSessionContext, withSystemContext } from "./session-context";
+export { resolveSqlSession, withSessionContext, withUnrestrictedSystemContext, withSystemContext } from "./session-context";
 export type { SqlSession } from "./session-context";
 export { resolveInternalId, registerId, upsertReturningId } from "./id-registry";
 export type { EntityType } from "./id-registry";

@@ -79,7 +79,7 @@ import { zoomAuthUrl, zoomConfigured } from "./zoom";
 import { ffmpegAvailable, isNodeRuntime, videoPassEnvEnabled } from "./video/capability";
 import { WORKER_BUILD, GEMINI_SCHEMA_ENUM_FIX } from "./build-id";
 import { firestoreAdminReady, getDb, getDoc } from "./data/firestore-admin";
-import { resolveRequestContext } from "./data/scope";
+import { resolveRequestContext, canReadResource, type RequestContext } from "./data/scope";
 import { handleOrgStructureGet, handleOrgStructurePatch } from "./org-structure";
 import { handleOutboxProjectPost } from "./routes/internal-outbox";
 import type { VerifiedUser } from "./auth";
@@ -1629,6 +1629,30 @@ export async function handleDomainWrite(
 }
 
 /**
+ * M1 fix: app-layer authorization for SQL writes to un-RLS'd tables.
+ * account, contact, task, notification have no RLS policies, so the SQL path
+ * must enforce the same checks the Firestore rules do (canCreateAccount etc.).
+ * Returns true if the caller is authorized, false to fall through to Firestore.
+ */
+function canWriteUnscopedResource(
+  ctx: RequestContext | null,
+  operation: "create" | "update",
+): boolean {
+  if (!ctx) return false;
+  if (ctx.role === "admin") return true;
+  if (operation === "create") {
+    // canCreateAccount: admin, or manager with org, or SE with org+team.
+    return (ctx.role === "manager" && !!ctx.orgId) ||
+      (ctx.role === "se" && !!ctx.orgId && !!ctx.teamId);
+  }
+  // update: admin or manager (SEs can update accounts they can read, but
+  // without a SQL query to check the account's SE team we restrict to
+  // manager+ on the SQL path; SEs fall through to Firestore which has
+  // the onAccountSeTeam check).
+  return ctx.role === "manager";
+}
+
+/**
  * Route CRM domain writes through the persistence port when PERSISTENCE_MODE
  * is dual/sql. Returns { handled: false } for non-CRM methods, firestore
  * mode, or when the caller has no SQL session yet (pre-migration user) — the
@@ -1651,6 +1675,28 @@ async function trySqlDomainWrite(
   }
 
   const doc = (args[0] || {}) as Record<string, unknown>;
+
+  // M1 fix: for un-RLS'd tables (account, contact), resolve the Firestore-based
+  // RequestContext and check app-layer authorization before the SQL write.
+  // If the check fails, fall through to Firestore (which has security rules).
+  const UNSCOPED_METHODS = new Set([
+    "createAccount", "updateAccount", "createContact", "updateContact",
+  ]);
+  if (UNSCOPED_METHODS.has(method)) {
+    let ctx: RequestContext | null = null;
+    try {
+      ctx = await resolveRequestContext(verified, env);
+    } catch {
+      // If we can't resolve the context (authIndex missing), fall through to
+      // Firestore rather than blocking the write.
+      return { handled: false };
+    }
+    const op = method.startsWith("update") ? "update" : "create";
+    if (!canWriteUnscopedResource(ctx, op)) {
+      return { handled: false };
+    }
+  }
+
   const handled = await withSessionContext(session, async (client) => {
     switch (method) {
       case "createAccount": {

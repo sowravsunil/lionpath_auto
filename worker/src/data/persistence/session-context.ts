@@ -111,11 +111,16 @@ export async function withSessionContext<T>(
 }
 
 /**
- * System-context variant for internal jobs (outbox projector, read-model
- * rebuilds): runs as the usr_janus_ai sentinel with admin scope. Use only
- * from trusted server code paths — never from request handlers.
+ * M3 fix: renamed from withSystemContext to withUnrestrictedSystemContext to
+ * make the danger obvious at the call site — this bypasses ALL RLS by running
+ * as the usr_janus_ai sentinel with is_admin=true. Use only from trusted
+ * server code paths (outbox projector, read-model rebuilds, telemetry
+ * inserts) — NEVER from request handlers.
+ *
+ * A compatibility alias is kept so existing imports don't break during the
+ * transition; new code must use the unrestricted name.
  */
-export async function withSystemContext<T>(
+export async function withUnrestrictedSystemContext<T>(
   fn: (client: PgClient) => Promise<T>,
   env?: PostgresEnv,
 ): Promise<T> {
@@ -131,3 +136,6 @@ export async function withSystemContext<T>(
     pool,
   );
 }
+
+/** @deprecated Use withUnrestrictedSystemContext — the name makes the RLS bypass explicit. */
+export const withSystemContext = withUnrestrictedSystemContext;

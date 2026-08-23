@@ -37,6 +37,8 @@ const PHASE_FILES = [
   "11_deal_contact.sql",
   "12_read_model_views.sql",
   "13_rls_hardening_round2.sql",
+  "17_rls_role_defaults.sql",
+  "18_ai_run_rls.sql",
 ];
 
 loadDevVars();

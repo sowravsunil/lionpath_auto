@@ -24,3 +24,7 @@
 -- Phase D extensions
 \ir 12_read_model_views.sql
 \ir 15_id_registry_backfill.sql
+
+-- Phase G extensions (security hardening)
+\ir 17_rls_role_defaults.sql
+\ir 18_ai_run_rls.sql

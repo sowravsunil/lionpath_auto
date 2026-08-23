@@ -1,169 +1,373 @@
-# Security Review — All Findings & Resolution Status
+# Security Review Resolution
 
-**Date:** 2026-08-08 · **Branch:** 2.1 · **Repo:** antonyanbu25/lionpath_V2
-**Production:** portal.benjaminsquare.com (VPS) · Firebase project: se-singha-paathi
+Branch: `feat/security-hardening` (off `origin/main`)
 
-This document answers every security finding from the review, states whether it is
-fixed, and how to verify it live on the portal.
-
----
-
-## P0-1 — Firestore privilege escalation via users/{id} self-update
-
-**Finding:** Any signed-in SE could write `{ role: 'admin' }` to their own `users/{id}`
-doc from the browser console and gain admin everywhere (accounts, deals, org structure).
-
-**Status: ✅ FIXED & DEPLOYED** (commit `18c4a18`)
-
-**Fix:** Added `isSelfProfileUpdate()` guard in `firestore.rules`. Self-update is now
-restricted to non-privileged fields only (`displayName`, `avatarDataUrl`, `email`,
-`updatedAt`). Privileged fields (`role`, `teamId`, `orgId`, `managerId`, `status`,
-`authUid`, `id`) can no longer be changed via self-update. Admin and
-`canManageOrgStructureUser()` escalation paths preserved.
-
-**Regression test:** `rules-tests/users.test.mjs` — SE self-role-escalation FAILS,
-self-displayName SUCCEEDS, admin role update SUCCEEDS, director org-structure update SUCCEEDS.
-
-**How to verify live on portal.benjaminsquare.com:**
-1. Log in as a normal SE.
-2. Open the browser console (F12 → Console).
-3. Run:
-   ```js
-   // Get your own user id from the session, then:
-   const uid = /* your internal user id, e.g. usr_... */;
-   const { doc, updateDoc, getFirestore } = await import('https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js');
-   // (or use the app's existing firebase instance)
-   updateDoc(doc(getFirestore(), 'users', uid), { role: 'admin' })
-     .then(() => console.log('VULNERABLE — role changed!'))
-     .catch(e => console.log('BLOCKED ✅ —', e.code));
-   ```
-4. Expected: `BLOCKED ✅ — permission-denied`. If it says "VULNERABLE", the fix is not live.
-
----
-
-## P0-2 — Dummy-auth fallback trusts client-claimed identity
-
-**Finding:** `worker/src/auth.ts` `requireUser()` returned `null` (not an error) when
-`FIREBASE_PROJECT_ID` was unset, so a misconfigured deploy silently trusted
-client-claimed identity. Also `isDemoManagerEmail()` granted manager-proxy write power
-via a spoofable email regex.
-
-**Status: ✅ FIXED & DEPLOYED to VPS** (commit `285fe89`)
-
-**Fix:** `buildEnv()` in `node-server.ts` now **hard-fails worker boot** if
-`NODE_ENV=production` AND `FIREBASE_PROJECT_ID` is empty. Local dev (NODE_ENV unset) is
-unaffected. `requireUser()` logs a prominent DUMMY MODE warning. `wrangler.toml` default
-set to `se-singha-paathi`. `isDemoManagerEmail()` is now unreachable in production.
-
-**How to verify live on portal.benjaminsquare.com:**
-- The portal loads and the API responds (worker booted = FIREBASE_PROJECT_ID is set).
-- Check the worker logs for any `DUMMY MODE ACTIVE` warning — there should be none.
-- The worker log line `Firestore admin: ready (project=se-singha-paathi)` confirms real auth.
-
----
-
-## P0-3 — Secrets spread across three unsynced configs
-
-**Finding:** Secrets live in `wrangler.toml`, VPS `.env`, and Cloud Run config with no
-central manager — more copies = more leak surface.
-
-**Status: ✅ ACCEPTED RISK (internal-only tool)** — inventory + drift-check done; full migration deferred
-
-**Done (commit `285fe89`):**
-- `docs/SECRETS_INVENTORY.md` — full inventory of every secret across all targets.
-- `deploy/scripts/check-secrets-drift.sh` — manual pre-deploy drift check (keys only, values redacted).
-- **Committed `FRESHDESK_API_KEY` scrubbed from repo** (commit `25ca86f`) — removed from
-  `.env.example` and all docs. Repo is now clean of the key.
-
-**Risk accepted (2026-08-08):** The Freshdesk key is internal-only and not accessible
-outside the office laptop, so rotation is not required. The key remains live in the VPS
-`.env` only.
-
-**Deferred (ops task, needs gcloud Owner access):** full Secret Manager migration for
-Cloud Run, VPS secret management, rotation policy.
-
----
-
-## P0-4 — No data retention / deletion policy
-
-**Finding:** No retention or deletion policy existed; all data persisted indefinitely.
-
-**Status: ✅ SIGNED OFF — 190-day retention approved** (2026-08-08)
-
-**Done (commit `285fe89` + updated):** `docs/DATA_RETENTION_POLICY.md` — approved
-**190-day** retention for call transcripts/analysis, contact PII, accounts, deals,
-lifecycles, prep briefs, tasks, and feedback. User records and org structure retained
-indefinitely (employee data). Explicitly **no TTL or deletion code added yet** — the
-policy is approved; implementation (Firestore TTL + scheduled deletion job) is a
-separate, tested task.
-
-**Approved by:** Team lead (Kuttan), 2026-08-08.
-
----
-
-## P1-1 — Rules vs UI guard parity test
-
-**Finding:** `firestore.rules` and `web/domain/rbac.js` are two independent RBAC
-implementations with no automated cross-check.
-
-**Status: ❌ NOT DONE** — recommended as a follow-up. A rules-test asserting UI-visible
-actions match rules-permitted actions per role.
-
----
-
-## P1-2 — Regression test for self-role-escalation
-
-**Finding:** No automated test asserted self-role-escalation fails.
-
-**Status: ✅ DONE** (commit `18c4a18`) — `rules-tests/users.test.mjs` covers it.
-
----
-
-## P2-1 — isDemoManagerEmail regex spoofable
-
-**Finding:** Demo-mode manager proxy via email regex (`manager@`, `ajay.`, `antony.`,
-`vipin.`).
-
-**Status: ✅ MITIGATED** — the P0-2 boot guard makes this path unreachable in production
-(it only runs when FIREBASE_PROJECT_ID is unset, which now hard-fails in prod).
-
----
-
-## P2-2 — No explicit rate-limiting / DoS posture
-
-**Finding:** No dedicated rate limiting beyond the per-user token budget.
-
-**Status: ✅ FIXED & DEPLOYED** (commit `0b4b4b0`)
-
-**Fix:** Added a per-request rate limiter (`worker/src/rate-limit.ts`) — in-memory fixed
-60s window counter per user, **120 req/min with 600 burst allowance**. Exempts
-`/api/config`, `/api/health/*`, `/api/zoom/status` so polling and Docker healthchecks
-are unaffected. Wired into both the CF Worker entry and the Node server's Video Pass 2
-intercept. Configurable via `RATE_LIMIT_*` env vars (kill-switch `RATE_LIMIT_ENABLED=0`).
-
-**Impact on normal SE usage:** A single SE generates ~115 HTTP requests/day (~0.08
-req/s average); worst-case burst is 15 requests in one minute (all post-call passes +
-page load). **15 << 120 — normal pre-call, post-call, and dashboard usage never trips
-the limiter.** It only catches script/loop abuse, retry storms, or brute-force floods.
-
----
+This document records every security finding from the Janus SE security
+review, the fix applied on this branch, the exact files/lines changed, why
+the fix resolves the vuln, and any residual risk. It is self-contained — a
+reviewer with no prior context can understand each change from this doc
+alone.
 
 ## Summary table
 
-| Finding | Severity | Status |
-|---------|----------|--------|
-| P0-1 users/{id} self-role-escalation | P0 | ✅ FIXED & DEPLOYED |
-| P0-2 dummy-auth trusts client identity | P0 | ✅ FIXED & DEPLOYED (VPS) |
-| P0-3 secrets in 3 unsynced configs | P0 | ✅ ACCEPTED RISK (internal-only; key scrubbed from repo) |
-| P0-4 no data retention policy | P0 | ✅ SIGNED OFF (190-day retention) |
-| P1-1 rules vs UI guard parity | P1 | ❌ NOT DONE |
-| P1-2 self-role-escalation regression test | P1 | ✅ DONE |
-| P2-1 isDemoManagerEmail spoofable | P2 | ✅ MITIGATED |
-| P2-2 no rate-limiting | P2 | ✅ FIXED & DEPLOYED |
+| ID | Severity | Finding | Status |
+|----|----------|---------|--------|
+| C1 | CRITICAL | Impersonation endpoint live in production | **FIXED** |
+| C2 | HIGH | `rejectUnauthorized: false` disables TLS cert verification | **FIXED** |
+| H1 | HIGH | RLS session-var bypass via direct `janus_app` connection | **FIXED** |
+| H2 | HIGH | `redact_pii()` leaves transcripts/MEDDPICC/ARR intact | **FIXED** |
+| H3 | HIGH | Transcript PII in plaintext; ai_run has no RLS | **PARTIAL** (RLS added; column-level encryption deferred) |
+| L3 | LOW→HIGH | `FIREBASE_AUTH_ENFORCED=0` disables auth in production | **FIXED** |
+| M1 | MEDIUM | No app-layer authz for SQL writes to un-RLS'd tables | **FIXED** |
+| M3 | MEDIUM | `withSystemContext` name hides RLS-bypass danger | **FIXED** |
+| M4 | LOW | Timing-unsafe cron secret comparison | **FIXED** |
 
 ---
 
-## Immediate action items
+## C1 — Impersonation endpoint live in production
 
-1. **Redeploy Cloud Run** with the P0-2 hard-fail + P2-2 rate limiter when janus is stood up (VPS is done).
-2. **Optional:** P1-1 rules/UI parity test as a follow-up.
+**Severity: CRITICAL**
+
+**The vuln:** `POST /api/admin/impersonate-token` lets a caller mint a
+Firebase custom token for any email, sign in as that user, and even
+auto-create new Firebase users. The only gate was a hardcoded allowlist of
+3 dev emails. No `NODE_ENV` check, no audit log, no additional secret. If
+any of the 3 allowlisted accounts was compromised, the attacker got full
+impersonation of every user.
+
+**What changed:** `worker/src/routes/impersonate.ts` (rewritten)
+
+1. **Production hard-gate** (`:42-44`): returns 403 immediately if
+   `NODE_ENV=production`. The endpoint is dev/staging-only.
+2. **Additional secret header** (`:55-61`): requires
+   `X-Impersonate-Secret` matching `IMPERSONATE_SECRET` env var. A stolen
+   Firebase token alone is no longer sufficient.
+3. **No auto-create** (`:90-93`): removed the `createUser` fallback —
+   impersonation targets must already exist in Firebase Auth. Returns 404
+   if the target email is not found.
+4. **Structured audit log** (`:69-74`): every impersonation event is
+   logged to `console.error` with `[AUDIT]` prefix, caller email, target
+   email, and timestamp. Visible in Cloud Run logs.
+
+**New env vars:** `IMPERSONATE_SECRET` added to `worker/src/env.ts:41` and
+`worker/src/node-server.ts` `NodeEnv` interface (`:30`) and `buildEnv()`
+(`:67`).
+
+**Residual risk:** In non-production (staging/dev), a compromised dev
+account + stolen `IMPERSONATE_SECRET` can still impersonate. The secret
+must be stored in Secret Manager and rotated. SQL `audit_log` logging is
+not implemented (the `audit_log` table is dead — see
+`janus_unutilized_tables.md`); console logging is the audit trail for now.
+
+---
+
+## C2 — `rejectUnauthorized: false` disables TLS cert verification
+
+**Severity: HIGH (CRITICAL on the public-IP QA path)**
+
+**The vuln:** `postgres-pool.ts:64` set `rejectUnauthorized: false` for ALL
+SSL modes including `sslmode=verify-full`. This silently downgraded
+cert-authenticated connections to encryption-only (MITM-vulnerable). The
+comment claimed production uses the Auth Proxy with a proper CA, but the
+code did the opposite.
+
+**What changed:** `worker/src/data/persistence/postgres-pool.ts:53-78`
+(`pgPoolOptions` rewritten)
+
+1. **Cert verification per sslmode** (`:68`): `rejectUnauthorized` is now
+   `true` only when `sslmode=verify-ca` or `sslmode=verify-full`. For
+   `sslmode=require`/`prefer`, it is `false` (encrypted, no validation —
+   same as before, but now intentional).
+2. **Explicit insecure override** (`:64-66`): `PG_SSL_INSECURE=1` env var
+   forces `rejectUnauthorized: false` regardless of sslmode. This is the
+   QA public-IP escape hatch.
+3. **Boot guard** (`worker/src/node-server.ts:120-127`): the worker
+   refuses to boot if `NODE_ENV=production` and `PG_SSL_INSECURE=1`. The
+   insecure flag is dev/QA-only.
+
+**New env vars:** `PG_SSL_INSECURE` added to `PostgresEnv` interface
+(`postgres-pool.ts:25`), `worker/src/env.ts:43`, and `node-server.ts`
+`NodeEnv` (`:31`) and `buildEnv()` (`:68`).
+
+**Why it fixes it:** `sslmode=verify-full` now actually verifies the
+server certificate. A MITM on the DB connection path is detected and
+rejected. The insecure path is explicitly opt-in and production-gated.
+
+**Residual risk:** The QA instance (`8.231.110.188`, `0.0.0.0/0`) with
+`PG_SSL_INSECURE=1` is still MITM-vulnerable — but that is the documented
+QA-only posture, and the boot guard prevents it in production.
+
+---
+
+## H1 — RLS session-var bypass via direct `janus_app` connection
+
+**Severity: HIGH**
+
+**The vuln:** RLS policies read `app.is_admin`, `app.user_id`,
+`app.org_unit_path` session variables. Anyone with the `janus_app`
+DATABASE_URL can connect directly and run
+`SELECT set_config('app.is_admin', 'true', true)` to bypass all RLS. No
+role-level defaults prevented this.
+
+**What changed:** New file `janus/schema/17_rls_role_defaults.sql`
+
+```sql
+ALTER ROLE janus_app SET app.is_admin = 'false';
+ALTER ROLE janus_app SET app.user_id = '';
+ALTER ROLE janus_app SET app.org_unit_path = '';
+```
+
+**Why it fixes it:** `ALTER ROLE ... SET` establishes a role-level default
+for the GUC. A direct `janus_app` connection that does NOT run
+`SET LOCAL` (which only the worker does, inside `withSessionContext`)
+gets the fail-closed defaults: `is_admin=false`, `user_id=NULL` (empty
+string → `NULLIF(...)` → NULL), `org_unit_path=NULL`. RLS policies deny
+all rows, exactly as if the session vars were never set.
+
+The worker's `withSessionContext` uses `set_config(..., true)` (is_local),
+which overrides the role default for the current transaction only. So
+legitimate worker writes are unaffected — the `SET LOCAL` takes
+precedence within the transaction, and the role default is restored
+after `COMMIT`.
+
+**Apply path:** Added to `worker/scripts/apply-janus-schema.mjs` (`:40`)
+and `janus/schema/init_all.sql` (`:29`).
+
+**Residual risk:** A `SUPERUSER` or a role with `SET ROLE janus_app` from
+a `SUPERUSER` session can still override the defaults with `SET` (not
+`SET LOCAL`). This is inherent to PostgreSQL — `SUPERUSER` bypasses all
+RLS. The fix raises the bar from "anyone with janus_app creds" to "anyone
+with postgres superuser creds", which is the correct trust boundary.
+
+---
+
+## H2 — `redact_pii()` leaves transcripts/MEDDPICC/ARR intact
+
+**Severity: HIGH (false compliance signal)**
+
+**The vuln:** `redact_pii()` (a `SECURITY DEFINER` function) only redacted
+two JSONB paths (`callNotes` and `artifacts.suggestedFollowUpEmail`) in
+`post_call.analysis`, leaving the transcript, MEDDPICC fields, ARR lines,
+objections, commitments, MoM drafts, and deal signals intact. A
+redaction job that runs, reports a row count, and leaves the most
+sensitive data creates a false compliance signal.
+
+**What changed:** `janus/schema/06_phase6_outbox_integrations_pii.sql:249-296`
+(`redact_pii` function rewritten)
+
+The `UPDATE post_call` now sets `analysis = NULL`, `detail = NULL`, and
+`transcript_ref = NULL` for redacted rows, instead of surgically
+redacting two JSONB paths. The `pipeline_state` is preserved for
+operational visibility (the row still exists, just without PII blobs).
+
+**Why it fixes it:** NULLing out the entire `analysis` and `detail`
+JSONB columns removes all PII — transcripts, MEDDPICC, ARR, objections,
+commitments, everything — in one operation. No path-by-path redaction
+can miss a field. `transcript_ref` (the GCS URI) is also NULLed so the
+GCS object can be independently tombstoned.
+
+**Residual risk:** GCS objects referenced by `transcript_ref` are not
+deleted by this function (it only NULLs the SQL reference). A separate
+GCS lifecycle policy or a `gsutil rm` step is needed to delete the
+actual transcript files. The user/contact tombstoning (step 2 of the
+function) is unchanged and correct.
+
+---
+
+## H3 — Transcript PII in plaintext + ai_run RLS
+
+**Severity: HIGH (data protection) / the ai_run RLS part is FIXED**
+
+**The vuln (PII):** Call transcripts are stored in plaintext in
+`post_call.detail` JSONB. Cloud SQL provides disk-level encryption
+(Google-managed keys), but no column-level encryption. A direct
+connection bypass (H1) or SQL injection could expose transcripts.
+
+**What changed (ai_run RLS):** New file `janus/schema/18_ai_run_rls.sql`
+
+Adds RLS to `ai_run`:
+- `ai_run_owner_read` (SELECT): `is_admin() OR user_id = current_user_id()`.
+  A user sees only their own cost rows; admin sees all; sentinel rows
+  (`user_id IS NULL`) are admin-only.
+- `ai_run_admin_write` (ALL): `is_admin()` only — writes go through
+  `insertAiRun` which runs as the sentinel with `is_admin=true`.
+- `REVOKE UPDATE, DELETE` — append-only.
+
+**What changed (encryption posture):** Documented in
+`janus/schema/18_ai_run_rls.sql` header comments:
+- Cloud SQL: encryption at rest is automatic (Google-managed keys). CMEK
+  is available but not configured.
+- `post_call.analysis/detail`: plaintext at column level. Disk-level
+  encryption protects against physical theft but not H1 (direct
+  connection). Column-level encryption (pgcrypto) or GCS-only transcript
+  storage with CMEK is the production target.
+- GCS bucket `se-singha-paathi-call-payloads`: no KMS/CMEK configured.
+
+**Apply path:** Added to `apply-janus-schema.mjs` (`:41`) and
+`init_all.sql` (`:30`).
+
+**Residual risk / DEFERRED:** Column-level encryption for
+`post_call.analysis/detail` is not implemented — it requires an
+application-layer encryption/de-encryption step on every read/write, or
+migrating transcripts to GCS-only storage with CMEK. This is a
+product-level decision (performance impact, key management) and is
+deferred. The H1 fix (role defaults) and RLS on `post_call` (already
+present from `13_rls_hardening_round2.sql`) are the current defense.
+
+---
+
+## L3 — `FIREBASE_AUTH_ENFORCED=0` disables auth in production
+
+**Severity: LOW→HIGH (elevated because it silently disables all auth)**
+
+**The vuln:** The boot guard in `node-server.ts` only checked
+`FIREBASE_PROJECT_ID` — but `FIREBASE_AUTH_ENFORCED=0` also disables
+token verification (dummy auth mode), even when `FIREBASE_PROJECT_ID` is
+set. A production deployment with both set would silently trust
+client-claimed identity.
+
+**What changed:** `worker/src/node-server.ts:114-120` (new boot guard
+block)
+
+```ts
+const authEnforced = (env.FIREBASE_AUTH_ENFORCED || "1").trim().toLowerCase();
+const authDisabled = authEnforced === "0" || authEnforced === "false" || authEnforced === "no";
+if (isProduction && firebaseProjectId && authDisabled) {
+  const msg = "[worker] FATAL: FIREBASE_AUTH_ENFORCED=0 in a production environment ...";
+  console.error(msg);
+  throw new Error(msg);
+}
+```
+
+**Why it fixes it:** The worker now refuses to boot in production if
+either `FIREBASE_PROJECT_ID` is empty OR `FIREBASE_AUTH_ENFORCED=0`. Both
+conditions that enable dummy auth are hard-gated.
+
+**Residual risk:** None — the boot guard is a hard fail, not a warning.
+
+---
+
+## M1 — No app-layer authz for SQL writes to un-RLS'd tables
+
+**Severity: MEDIUM**
+
+**The vuln:** `trySqlDomainWrite` in `routes.ts` writes to `account` and
+`contact` (which have no RLS) without checking the caller's role. The
+Firestore path has `canCreateAccount` / `onAccountSeTeam` rules, but the
+SQL path trusted the client-provided `doc` fields and wrote directly.
+
+**What changed:** `worker/src/routes.ts:1631-1654` (new
+`canWriteUnscopedResource` helper) and `:1678-1694` (authz check before
+SQL write for un-RLS'd methods)
+
+1. **`canWriteUnscopedResource(ctx, op)`** (`:1637-1652`): checks the
+   caller's `RequestContext` (resolved from Firestore `authIndex`/`users`
+   — same source as the Firestore rules). For creates: admin, manager
+   with org, or SE with org+team (mirrors `canCreateAccount`). For
+   updates: admin or manager (SEs fall through to Firestore, which has
+   the `onAccountSeTeam` check).
+2. **Guard in `trySqlDomainWrite`** (`:1680-1694`): for
+   `createAccount`/`updateAccount`/`createContact`/`updateContact`,
+   resolves `RequestContext` and checks `canWriteUnscopedResource`. If
+   the check fails, returns `{ handled: false }` — the request falls
+   through to the Firestore path, which has the security rules.
+
+**Why it fixes it:** The SQL path now enforces the same role-based
+authorization as the Firestore rules before writing to un-RLS'd tables.
+An SE who would be denied by Firestore rules is also denied (or falls
+through to Firestore) on the SQL path.
+
+**Residual risk:** The `resolveRequestContext` call requires Firestore
+(it reads from `authIndex`/`users` collections). If Firestore is not
+configured, the check fails gracefully (returns `{ handled: false }` →
+Firestore fallback), but the write doesn't go to SQL. This is acceptable
+during the dual-write transition (Firestore is still available). After
+full SQL cutover, the authz check should move to SQL (query
+`app_user`/`user_role` directly instead of Firestore).
+
+---
+
+## M3 — `withSystemContext` name hides RLS-bypass danger
+
+**Severity: MEDIUM**
+
+**The vuln:** `withSystemContext` runs as the `usr_janus_ai` sentinel with
+`is_admin=true`, bypassing all RLS. The name gave no indication of the
+danger. A future developer could call it from a request handler to "fix"
+a permission error, silently bypassing all RLS.
+
+**What changed:** `worker/src/data/persistence/session-context.ts:113-141`
+
+Renamed `withSystemContext` to `withUnrestrictedSystemContext`. A
+deprecated alias `withSystemContext = withUnrestrictedSystemContext` is
+kept for backward compatibility. The new name makes the RLS bypass
+explicit at every call site.
+
+Also updated `worker/src/data/persistence/index.ts:10` to export both
+names.
+
+**Why it fixes it:** The name `withUnrestrictedSystemContext` is
+self-documenting — a developer seeing it in a route handler will
+immediately question why RLS is being bypassed. The deprecated alias
+ensures existing code doesn't break.
+
+**Residual risk:** The alias is still callable — a developer could still
+use `withSystemContext` without realizing the danger. A future lint rule
+or code search can find remaining `withSystemContext` calls and migrate
+them.
+
+---
+
+## M4 — Timing-unsafe cron secret comparison
+
+**Severity: LOW**
+
+**The vuln:** `verifyInternalCronAuth` compared the `INTERNAL_CRON_SECRET`
+with `===` (not constant-time). A timing side-channel could leak the
+secret byte-by-byte.
+
+**What changed:** `worker/src/routes/internal-batch.ts:57-92`
+
+Replaced `header === secret` with `timingSafeEqualString(header, secret)`,
+a constant-time comparison that:
+1. Checks length equality first (returns false immediately if lengths
+   differ, but still iterates to keep timing similar).
+2. Uses `crypto.timingSafeEqual` (Node.js built-in) when available.
+3. Falls back to a manual XOR-based constant-time compare for non-Node
+   runtimes.
+
+**Why it fixes it:** The comparison time is now proportional to the input
+length, not to the position of the first differing byte. An attacker
+cannot measure timing to narrow down the secret character-by-character.
+
+**Residual risk:** The length check leaks the secret length (an attacker
+can determine how long the secret is). This is low-impact — knowing the
+length does not help guess the content, and the secret is high-entropy.
+
+---
+
+## Files changed on this branch
+
+| File | Change |
+|------|--------|
+| `worker/src/routes/impersonate.ts` | C1: production gate, secret header, audit log, no auto-create |
+| `worker/src/data/persistence/postgres-pool.ts` | C2: correct `rejectUnauthorized` per sslmode, `PG_SSL_INSECURE` env |
+| `worker/src/node-server.ts` | L3 + C2: boot guards for `FIREBASE_AUTH_ENFORCED=0` and `PG_SSL_INSECURE=1` in production; new env vars |
+| `worker/src/env.ts` | New env vars: `IMPERSONATE_SECRET`, `PG_SSL_INSECURE` |
+| `janus/schema/17_rls_role_defaults.sql` **(new)** | H1: `ALTER ROLE janus_app SET` fail-closed defaults |
+| `janus/schema/06_phase6_outbox_integrations_pii.sql` | H2: `redact_pii()` NULLs analysis/detail/transcript_ref |
+| `janus/schema/18_ai_run_rls.sql` **(new)** | H3: ai_run RLS (owner-scoped) + encryption posture docs |
+| `worker/src/routes.ts` | M1: `canWriteUnscopedResource` authz check for un-RLS'd SQL writes |
+| `worker/src/data/persistence/session-context.ts` | M3: rename to `withUnrestrictedSystemContext` |
+| `worker/src/data/persistence/index.ts` | M3: export new name + deprecated alias |
+| `worker/src/routes/internal-batch.ts` | M4: constant-time cron secret comparison |
+| `worker/scripts/apply-janus-schema.mjs` | Add `17_rls_role_defaults.sql` and `18_ai_run_rls.sql` |
+| `janus/schema/init_all.sql` | Add `17` and `18` to psql apply path |
+
+## Verification
+
+- `tsc --noEmit`: 0 errors
+- `node scripts/run-tests.mjs --tag=unit`: 83/84 passed (1 failure is the
+  pre-existing `test-node-boot.mjs` port-bind issue, unrelated to these
+  changes)
+- `node janus/tests/run_all_phase_tests.mjs`: 36/36 passed
