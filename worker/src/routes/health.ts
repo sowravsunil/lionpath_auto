@@ -10,6 +10,7 @@
 
 import { getDb, firestoreAdminReady } from "../data/firestore-admin";
 import { requireUser } from "../auth";
+import { resolveRequestContext } from "../data/scope";
 import type { Env } from "../env";
 import { json } from "../http";
 import { isNodeRuntime } from "../video/capability";
@@ -93,13 +94,35 @@ export async function handleHealthReady(
 ): Promise<Response> {
   const { ready, checks } = await readinessChecks(env);
   // NEW-5 fix: only return detailed checks to authenticated admins or local
-  // probes. Unauthenticated callers get only {status} — no env names, no
-  // Firestore error messages.
-  const includeChecks = isLocalProbe(request);
+  // probes (Cloud Run health check from 127.0.0.1). Unauthenticated callers
+  // get only {status} — no env names, no Firestore error messages.
+  const includeChecks = await shouldIncludeChecks(request, env);
   const body = includeChecks
     ? { status: ready ? "ready" : "not_ready", probe: "ready", checks }
     : { status: ready ? "ready" : "not_ready", probe: "ready" };
   return json(body, ready ? 200 : 503, cors);
+}
+
+/**
+ * Decide whether the caller may see the detailed `checks` payload.
+ * Trusted sources: a local health probe (Cloud Run / 127.0.0.1) OR an
+ * authenticated admin. Everyone else gets only the coarse {status}.
+ *
+ * Auth resolution is best-effort: any failure (missing token, unverified
+ * token, profile not found, non-admin role) returns false and falls through
+ * to the redacted response. We never reject the health probe itself — a
+ * readiness check must not 401 the prober.
+ */
+async function shouldIncludeChecks(request: Request, env: Env): Promise<boolean> {
+  if (isLocalProbe(request)) return true;
+  try {
+    const verified = await requireUser(request, env);
+    if (!verified) return false;
+    const ctx = await resolveRequestContext(verified, env);
+    return ctx.role === "admin";
+  } catch {
+    return false;
+  }
 }
 
 /** GET /api/health — readiness probe (used by deploy verify curl). */
