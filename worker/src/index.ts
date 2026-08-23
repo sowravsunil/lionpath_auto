@@ -20,7 +20,7 @@
 import type { Env } from "./env";
 import { json } from "./http";
 import { logError } from "./logger";
-import { correlationIdFromRequest, runWithRequestContext } from "./request-context";
+import { correlationIdFromRequest, runWithRequestContext, getAssumeIdentityForRequest } from "./request-context";
 import {
   checkRateLimit,
   clientIpFromRequest,
@@ -35,6 +35,7 @@ import {
 import { dispatchDomainReadById } from "./routes/domain-reads";
 import { dispatchReadModelsById } from "./routes/read-models";
 import { handleImpersonateToken } from "./routes/impersonate";
+import { handleAssumeIdentity, handleAssumeIdentityExit, addAssumeIdentityHeaders } from "./routes/assume-identity";
 
 export type { Env } from "./env";
 
@@ -56,6 +57,13 @@ function corsHeaders(origin: string, allowed: string[]): Record<string, string> 
 function withCorrelationHeader(response: Response, correlationId: string): Response {
   const headers = new Headers(response.headers);
   headers.set("X-Request-Id", correlationId);
+  // Stamp X-Assume-Identity headers on every response when the current
+  // request is from an assumed-identity session (set by requireUser).
+  const assume = getAssumeIdentityForRequest();
+  if (assume) {
+    headers.set("X-Assume-Identity", "true");
+    headers.set("X-Assume-Identity-Expires-At", assume.assumeExpiresAt);
+  }
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -114,10 +122,24 @@ export default {
           return withCorrelationHeader(await handler(request, env, url, cors), correlationId);
         }
 
-        // Dev-only impersonation endpoint
+        // Dev-only impersonation endpoint (legacy — replaced by assume-identity)
         if (path === "/api/admin/impersonate-token" && request.method === "POST") {
           return withCorrelationHeader(
             await handleImpersonateToken(request, env, url, cors),
+            correlationId,
+          );
+        }
+
+        // Assume-Identity: secure admin impersonation (see docs/ASSUME_IDENTITY_DESIGN.md)
+        if (path === "/api/admin/assume-identity" && request.method === "POST") {
+          return withCorrelationHeader(
+            await handleAssumeIdentity(request, env, url, cors),
+            correlationId,
+          );
+        }
+        if (path === "/api/admin/assume-identity/exit" && request.method === "POST") {
+          return withCorrelationHeader(
+            await handleAssumeIdentityExit(request, env, url, cors),
             correlationId,
           );
         }

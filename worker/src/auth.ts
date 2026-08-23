@@ -1,5 +1,6 @@
 import { normalizeHistoryEmail } from "./history";
 import type { Env } from "./env";
+import { setAssumeIdentityForRequest } from "./request-context";
 
 interface Jwk {
   kid: string;
@@ -34,6 +35,19 @@ async function getJwks(): Promise<Jwk[]> {
 export interface VerifiedUser {
   email: string;
   uid: string;
+  /** Present when this token was minted by the assume-identity endpoint. */
+  assumeIdentity?: AssumeIdentityClaims;
+}
+
+/** Claims embedded in a Firebase custom token by the assume-identity endpoint. */
+export interface AssumeIdentityClaims {
+  assumeIdentity: true;
+  assumeSessionId: string;
+  assumeAdminUid: string;
+  assumeAdminEmail: string;
+  assumeReason: string;
+  /** ISO timestamp — the worker rejects the token after this time. */
+  assumeExpiresAt: string;
 }
 
 async function verifyFirebaseToken(token: string, projectId: string): Promise<VerifiedUser> {
@@ -65,7 +79,31 @@ async function verifyFirebaseToken(token: string, projectId: string): Promise<Ve
   if (!payload.email || payload.email_verified !== true)
     throw new Error("Email not verified.");
 
-  return { email: String(payload.email).toLowerCase(), uid: String(payload.sub) };
+  const user: VerifiedUser = { email: String(payload.email).toLowerCase(), uid: String(payload.sub) };
+
+  // Assume-identity claim enforcement: if the token carries assume_identity
+  // claims, verify the session-specific TTL (assume_expires_at) is not past.
+  // This is a stricter TTL than the Firebase token's own exp (1h) — the
+  // assume-identity session is limited to 15 minutes.
+  if (payload.assume_identity === true && payload.assume_expires_at) {
+    const expiresAt = new Date(String(payload.assume_expires_at)).getTime();
+    if (Date.now() > expiresAt) {
+      throw Object.assign(
+        new Error("Assume-identity session expired. Please sign in with your own credentials."),
+        { status: 401, assumeIdentityExpired: true },
+      );
+    }
+    user.assumeIdentity = {
+      assumeIdentity: true,
+      assumeSessionId: String(payload.assume_session_id || ""),
+      assumeAdminUid: String(payload.assume_admin_uid || ""),
+      assumeAdminEmail: String(payload.assume_admin_email || ""),
+      assumeReason: String(payload.assume_reason || ""),
+      assumeExpiresAt: String(payload.assume_expires_at),
+    };
+  }
+
+  return user;
 }
 
 /** True when API routes must verify Firebase ID tokens (production / Firebase SSO). */
@@ -99,6 +137,9 @@ export async function requireUser(request: Request, env: Env): Promise<VerifiedU
   if (domain && !user.email.endsWith(`@${domain}`)) {
     throw Object.assign(new Error(`Access limited to @${domain} accounts.`), { status: 403 });
   }
+  // Stamp assume-identity claims into the request context so
+  // withCorrelationHeader can add X-Assume-Identity headers to every response.
+  setAssumeIdentityForRequest(user.assumeIdentity);
   return user;
 }
 
