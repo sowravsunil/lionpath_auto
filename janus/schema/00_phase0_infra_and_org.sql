@@ -48,7 +48,11 @@ BEGIN
         CREATE TYPE pipeline_state_enum AS ENUM ('ingested', 'analysis_done', 'detail_done', 'scoring_done', 'signals_done', 'failed');
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'run_type_enum') THEN
-        CREATE TYPE run_type_enum AS ENUM ('pre_call', 'analysis', 'detail', 'scoring', 'signal_extract');
+        CREATE TYPE run_type_enum AS ENUM (
+            'pre_call', 'analysis', 'detail', 'scoring', 'signal_extract',
+            'embeddings', 'vision', 'transcript_infer', 'cluster_label',
+            'contact_enrich', 'research_cache', 'other'
+        );
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status_enum') THEN
         CREATE TYPE task_status_enum AS ENUM ('open', 'in_progress', 'completed', 'cancelled');

@@ -12,7 +12,7 @@ import type { FirestoreEnv } from "../data/firestore-admin";
 import { recordLlmUsage } from "../data/llm-usage";
 import { reserveDailyTokenBudget, totalTokens } from "../data/token-budget";
 import { logInfo } from "../logger";
-import type { LlmProvider, LlmRequest, LlmResult, ProviderEnv } from "./types";
+import type { LlmProvider, LlmRequest, LlmResult, LlmUsage, ProviderEnv } from "./types";
 import { anthropicProvider } from "./anthropic";
 import { geminiProvider } from "./gemini";
 import {
@@ -26,29 +26,93 @@ import {
 
 type ProviderFsEnv = FirestoreEnv & CostControlEnv;
 
+/**
+ * Classify a provider error into an error_code_enum value for ai_run.
+ * Mirrors the enum in 00_phase0_infra_and_org.sql. Used on the failure path
+ * so a failed/MAX_TOKENS call that still billed output tokens is captured
+ * with its error class for cost dashboards.
+ */
+function classifyLlmError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  // Gemini/Anthropic rate limits surface as 429 in the error message after
+  // gemini-retry exhausts its budget.
+  if (msg.includes("429") || msg.includes("rate limit") || msg.includes("rate_limit") || msg.includes("resource_exhausted")) {
+    return "rate_limit";
+  }
+  // Auth/key issues.
+  if (msg.includes("401") || msg.includes("403") || msg.includes("permission") || msg.includes("api key") || msg.includes("unauthorized")) {
+    return "auth_failure";
+  }
+  // Parse / safety / no-candidates / MAX_TOKENS — the model returned a response
+  // we could not use (output tokens may still have been billed).
+  if (msg.includes("max_tokens") || msg.includes("maxtokens") || msg.includes("finishreason") || msg.includes("no candidates") || msg.includes("no text") || msg.includes("safety") || msg.includes("recitation") || msg.includes("blocked") || msg.includes("could not parse json") || msg.includes("expected ")) {
+    return "validation_error";
+  }
+  // 5xx / network / provider-side.
+  if (msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("504") || msg.includes("timeout") || msg.includes("network") || msg.includes("econnreset") || msg.includes("fetch failed") || msg.includes("gemini api")) {
+    return "remote_error";
+  }
+  return "remote_error";
+}
+
 function wrapWithUsageRecording(provider: LlmProvider, fsEnv?: ProviderFsEnv): LlmProvider {
   return {
     async generate(req: LlmRequest): Promise<LlmResult> {
       const settleBudget = await reserveDailyTokenBudget(fsEnv, req.userId);
+      // usage/partial-usage captured on BOTH success and failure paths so a
+      // failed call that still billed tokens (MAX_TOKENS, safety block after
+      // generation, retried-then-failed 429) is recorded in ai_run.
+      let captured: { usage?: LlmUsage; errorCode?: string } = {};
       try {
         const result = await provider.generate(req);
-        if (req.userId) {
-          const used = result.usage ? totalTokens(result.usage.promptTokens, result.usage.outputTokens) : 0;
-          await settleBudget(used);
-          if (result.usage) {
-            recordLlmUsage(fsEnv, {
-              userId: req.userId,
-              callId: req.callId,
-              passName: req.passName,
-              cacheHit: req.cacheHit,
-              retryCount: result.usage.retryCount ?? 0,
-              ...result.usage,
-            });
-          }
-        }
+        captured = { usage: result.usage };
+        const u = result.usage;
+        const used = u ? totalTokens(u.promptTokens, u.outputTokens) : 0;
+        await settleBudget(used);
+        // recordLlmUsage now records even when req.userId is absent (sentinel/
+        // null attribution) — cost is incurred regardless of attribution. When
+        // the provider returned no usage (e.g. a degenerate response), record a
+        // zero-token success row rather than skipping, so the call is still
+        // counted in ai_run.
+        recordLlmUsage(fsEnv, {
+          userId: req.userId,
+          callId: req.callId,
+          passName: req.passName,
+          cacheHit: req.cacheHit,
+          model: u?.model ?? resolveDefaultModel(fsEnv as ProviderEnv),
+          promptTokens: u?.promptTokens ?? 0,
+          outputTokens: u?.outputTokens ?? 0,
+          cachedTokens: u?.cachedTokens ?? 0,
+          groundingQueries: u?.groundingQueries ?? 0,
+          latencyMs: u?.latencyMs ?? 0,
+          retryCount: u?.retryCount ?? 0,
+        });
         return result;
       } catch (err) {
         await settleBudget(0);
+        // No result.usage on a thrown error (the provider throws before
+        // returning), so we record a zero-token failed run tagged with the
+        // error class. model falls back to the env default — the provider
+        // resolves the real model internally and does not surface it on error,
+        // so this is an approximation for the cost row; the error code is the
+        // reliable signal. If a provider ever attaches a partial usage to the
+        // error object (e.g. via a subclass), prefer it.
+        const partialUsage = (err as { usage?: LlmUsage }).usage;
+        captured = { usage: partialUsage, errorCode: classifyLlmError(err) };
+        recordLlmUsage(fsEnv, {
+          userId: req.userId,
+          callId: req.callId,
+          passName: req.passName,
+          cacheHit: req.cacheHit,
+          model: partialUsage?.model ?? resolveDefaultModel(fsEnv as ProviderEnv),
+          promptTokens: partialUsage?.promptTokens ?? 0,
+          outputTokens: partialUsage?.outputTokens ?? 0,
+          cachedTokens: partialUsage?.cachedTokens ?? 0,
+          groundingQueries: partialUsage?.groundingQueries ?? 0,
+          latencyMs: partialUsage?.latencyMs ?? 0,
+          retryCount: partialUsage?.retryCount ?? 0,
+          errorCode: captured.errorCode,
+        });
         throw err;
       }
     },

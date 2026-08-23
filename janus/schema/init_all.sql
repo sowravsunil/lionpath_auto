@@ -17,6 +17,8 @@
 \ir 14_rls_owner_write_calls.sql
 \ir 09_id_registry.sql
 \ir 10_shape_version.sql
+\ir 10b_integration_enum.sql
+\ir 10c_run_type_enum_widen.sql
 
 -- Phase B extensions
 \ir 11_deal_contact.sql
@@ -24,3 +26,6 @@
 -- Phase D extensions
 \ir 12_read_model_views.sql
 \ir 15_id_registry_backfill.sql
+
+-- Phase F extensions (ai_run cost-modelling telemetry)
+\ir 16_ai_run_telemetry.sql
