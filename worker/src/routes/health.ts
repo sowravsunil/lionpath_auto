@@ -1,8 +1,15 @@
 /**
  * Cloud Run probes — liveness (process up) and readiness (Firestore + required env).
+ *
+ * NEW-5 fix: the readiness endpoint used to return internal config details
+ * (missing env vars, Firestore error messages) to any unauthenticated
+ * caller. Now returns only {status} to unauthenticated callers; includes
+ * `checks` detail only when the caller is authenticated as admin or the
+ * request is from 127.0.0.1 (Cloud Run health check).
  */
 
 import { getDb, firestoreAdminReady } from "../data/firestore-admin";
+import { requireUser } from "../auth";
 import type { Env } from "../env";
 import { json } from "../http";
 import { isNodeRuntime } from "../video/capability";
@@ -58,6 +65,15 @@ async function readinessChecks(env: Env): Promise<{
   return { ready, checks };
 }
 
+/** True when the request is a local health probe (Cloud Run / 127.0.0.1). */
+function isLocalProbe(request: Request): boolean {
+  const xri = request.headers.get("X-Real-IP");
+  if (xri === "127.0.0.1" || xri === "::1") return true;
+  const xff = request.headers.get("X-Forwarded-For");
+  if (xff && xff.split(",")[0]?.trim() === "127.0.0.1") return true;
+  return false;
+}
+
 /** GET /api/health/live — process is up (no dependency checks). */
 export async function handleHealthLive(
   _request: Request,
@@ -70,13 +86,20 @@ export async function handleHealthLive(
 
 /** GET /api/health/ready — Firestore reachable and required env present. */
 export async function handleHealthReady(
-  _request: Request,
+  request: Request,
   env: Env,
   _url: URL,
   cors: Record<string, string>,
 ): Promise<Response> {
   const { ready, checks } = await readinessChecks(env);
-  return json({ status: ready ? "ready" : "not_ready", probe: "ready", checks }, ready ? 200 : 503, cors);
+  // NEW-5 fix: only return detailed checks to authenticated admins or local
+  // probes. Unauthenticated callers get only {status} — no env names, no
+  // Firestore error messages.
+  const includeChecks = isLocalProbe(request);
+  const body = includeChecks
+    ? { status: ready ? "ready" : "not_ready", probe: "ready", checks }
+    : { status: ready ? "ready" : "not_ready", probe: "ready" };
+  return json(body, ready ? 200 : 503, cors);
 }
 
 /** GET /api/health — readiness probe (used by deploy verify curl). */

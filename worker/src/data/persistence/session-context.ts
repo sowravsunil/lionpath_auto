@@ -36,9 +36,25 @@ export interface SqlSession {
  * fall back to Firestore in dual mode.
  */
 // Short-TTL per-process cache: resolveSqlSession ran a round-trip on every
-// mutation. Sessions change rarely; 60s staleness is acceptable for RLS vars.
-const SESSION_CACHE_TTL_MS = 60_000;
+// mutation. Sessions change rarely; 5s staleness is acceptable for RLS vars
+// while limiting the window for stale role/scope after revocation to 5s.
+// NEW-7 fix: reduced from 60s to 5s. The original 60s meant a demoted admin
+// or moved user retained their previous RLS scope for up to 60 seconds —
+// a 60s window where a demoted manager could read private SE reflections.
+// 5s keeps the DB round-trip savings for rapid successive writes while
+// bounding the revocation lag to an acceptable window.
+const SESSION_CACHE_TTL_MS = 5_000;
 const sessionCache = new Map<string, { session: SqlSession | null; at: number }>();
+
+/**
+ * Invalidate the cached session for a given authUid. Call this when a
+ * user's role or org_unit is changed (e.g. admin demotion, team move) so
+ * the next request re-resolves from the DB instead of serving the stale
+ * cached session.
+ */
+export function invalidateSqlSession(authUid: string): void {
+  sessionCache.delete(authUid);
+}
 
 export async function resolveSqlSession(
   authUid: string,

@@ -79,7 +79,7 @@ import { zoomAuthUrl, zoomConfigured } from "./zoom";
 import { ffmpegAvailable, isNodeRuntime, videoPassEnvEnabled } from "./video/capability";
 import { WORKER_BUILD, GEMINI_SCHEMA_ENUM_FIX } from "./build-id";
 import { firestoreAdminReady, getDb, getDoc } from "./data/firestore-admin";
-import { resolveRequestContext } from "./data/scope";
+import { resolveRequestContext, assertCanReadResource, type RequestContext } from "./data/scope";
 import { handleOrgStructureGet, handleOrgStructurePatch } from "./org-structure";
 import { handleOutboxProjectPost } from "./routes/internal-outbox";
 import type { VerifiedUser } from "./auth";
@@ -1919,6 +1919,20 @@ export async function handleDealsCreate(
   const account = await getDoc("accounts", accountId, env);
   if (!account) {
     return json({ error: "Account not found." }, 404, cors);
+  }
+
+  // NEW-3 fix: verify the caller is authorized to create deals for this
+  // account. The old code had no check — any authenticated user could
+  // create deals on any account (IDOR). Mirrors Firestore canCreateAccount:
+  // admin sees all, manager checks team/org, SE checks team.
+  try {
+    assertCanReadResource(ctx, {
+      ownerId: stringField(account.primarySeUserId) || undefined,
+      teamId: typeof account.teamId === "string" ? account.teamId : undefined,
+      orgId: typeof account.orgId === "string" ? account.orgId : undefined,
+    });
+  } catch {
+    return json({ error: "You are not authorized to create deals for this account." }, 403, cors);
   }
 
   const actorId = ctx.userId;

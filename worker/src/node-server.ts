@@ -105,6 +105,19 @@ function buildEnv(): NodeEnv {
       console.error(msg);
       throw new Error(msg);
     }
+    // NEW-8 fix: refuse to boot if ALLOWED_ORIGINS contains a wildcard and
+    // CORS credentials are enabled (the default). A wildcard origin with
+    // Allow-Credentials: true lets any website make authenticated cross-origin
+    // requests to the API.
+    const allowedOrigins = (env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim());
+    if (allowedOrigins.includes("*")) {
+      const msg =
+        "[worker] FATAL: ALLOWED_ORIGINS contains '*' which is unsafe with " +
+        "Access-Control-Allow-Credentials: true. List explicit origins instead. " +
+        "Refusing to boot.";
+      console.error(msg);
+      throw new Error(msg);
+    }
   }
 
   const historyDir = (process.env.HISTORY_FILE_DIR || "").trim();

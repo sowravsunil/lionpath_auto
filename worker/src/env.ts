@@ -30,4 +30,6 @@ export interface Env extends PrepEnv, ZoomEnv, HistoryEnv, CostControlEnv, RateL
   EMAIL_PROVIDER_API_KEY?: string;
   /** From address for dispute notify, e.g. "LionPath <noreply@example.com>". */
   DISPUTE_NOTIFY_FROM?: string;
+  /** When "1"/"true", redact emails/phones/CCs in transcripts before sending to the LLM. See docs/LLM_TRANSCRIPT_DPIA.md. */
+  LLM_TRANSCRIPT_REDACTION?: string;
 }
