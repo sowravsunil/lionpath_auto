@@ -14,6 +14,7 @@ import { kbContextBlock } from "./extract-facts";
 import { allCriteriaPromptBlock } from "./icp-criteria";
 import { applySeContextToDiscovery } from "./se-discovery-hints";
 import { applySeContextToPrep, factsFromSeContext, SE_SOURCE } from "./se-context-facts";
+import { repairMissingSections } from "./synthesize-repair";
 import type { Env, ResearchFact, SourceRef } from "./types";
 
 const PREP_GEMINI_SCHEMA = toPrepGeminiResponseSchema();
@@ -270,8 +271,33 @@ export async function synthesizePrep(
     return canonicalizePrepSources(withDiscovery, { authoritative: seSources }).prep;
   }
 
+  // The research-facts block reused by the section-local repair calls so a
+  // repaired field is grounded in the same evidence as the original synthesis.
+  const researchFactsBlock = JSON.stringify({ facts: seFacts, sources: seSources }, null, 2);
+  const prepSchemaProperties = (PREP_SCHEMA.properties ?? {}) as Record<string, unknown>;
+
   try {
-    return finalizePrep(extractJson<Prep>(result.text));
+    const raw = extractJson<Prep>(result.text);
+    // Section-local resilience (T2.6 / FM-14): a truncated synthesis parses to a
+    // partial object missing whole fields. Run a TARGETED repair call for each
+    // missing field — only that field, only its schema — so the fields that
+    // survived the truncation are never re-sent to the model and a repair can no
+    // longer corrupt them with plausible filler. An empty-but-present array is
+    // the model's honest "nothing found" and is NOT repaired (that would re-run
+    // the LLM on every thin brief and invite the filler T1.4 degrades on).
+    const repaired = await repairMissingSections(
+      raw as unknown as Record<string, unknown>,
+      provider,
+      prepSchemaProperties,
+      {
+        researchFactsBlock,
+        companyName: input.companyName,
+        companyDomain: input.companyDomain,
+        userId: input.userId,
+        callId: input.callId,
+      },
+    );
+    return finalizePrep(repaired as unknown as Prep);
   } catch (err) {
     const repaired = await provider.generate({
       system: "Repair malformed JSON. Output ONLY valid JSON matching the schema.",

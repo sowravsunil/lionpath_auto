@@ -63,6 +63,24 @@ export function validatePrep(prep: Prep): { prep: Prep; lowConfidence: string[] 
     return s;
   });
 
+  // incumbent.incumbent_name cross-check (T2.3): the headline incumbent is a
+  // free-prose field with no sourceLabel, so a model could write "Intercom" while
+  // the sourced "Incumbent tool" signal says "Zendesk" — the SE then sees two
+  // different incumbents in the same brief. The signal is the grounded value
+  // (it cleared the source gate above); when the two disagree, the sourced
+  // signal wins and the model's free-prose value is replaced. When the signal
+  // is unknown/unsourced, the model's value stands but is flagged low-confidence
+  // so the UI does not present two equally-confident incumbents.
+  let incumbent = prep.incumbent;
+  const incumbentSignal = signals.find((s) => s.label === "Incumbent tool");
+  if (incumbent && incumbentSignal && !isUnknown(incumbentSignal.value)) {
+    const model = String(incumbent.incumbent_name || "").trim();
+    if (model && !isUnknown(model) && model.toLowerCase() !== String(incumbentSignal.value).toLowerCase()) {
+      lowConfidence.push(`incumbent:incumbent_name "${model}" replaced by sourced signal "${incumbentSignal.value}"`);
+      incumbent = { ...incumbent, incumbent_name: incumbentSignal.value };
+    }
+  }
+
   // supportJD was the one claim that escaped this gate entirely — it is not research-
   // derived unless it traces to a real job posting, so blank it when the label does not
   // resolve to a usable source rather than presenting invented responsibilities.
@@ -195,21 +213,22 @@ export function validatePrep(prep: Prep): { prep: Prep; lowConfidence: string[] 
   // re-normalizing the whole prep (which is already normalized).
   const gatedPcv = normalizePainCapabilityValue(prep, gatedPains);
 
-  return {
-    prep: {
-      ...prep,
-      facts,
-      signals,
-      fitSnapshot: groundedFit,
-      likelyPains: gatedPains,
-      painCapabilityValue: gatedPcv,
-      prospects,
-      sources,
-      ...(supportJD ? { supportJD } : {}),
-      ...(icpFit ? { icpFit } : {}),
-    },
-    lowConfidence,
-  };
+    return {
+      prep: {
+        ...prep,
+        facts,
+        signals,
+        ...(incumbent ? { incumbent } : {}),
+        fitSnapshot: groundedFit,
+        likelyPains: gatedPains,
+        painCapabilityValue: gatedPcv,
+        prospects,
+        sources,
+        ...(supportJD ? { supportJD } : {}),
+        ...(icpFit ? { icpFit } : {}),
+      },
+      lowConfidence,
+    };
 }
 
 /** Collect keys/labels with low confidence for UI highlighting. */
